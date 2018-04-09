@@ -10,6 +10,11 @@ public class IncomingEventDataController {
 
     @RequestMapping(value = "/events", method = RequestMethod.POST)
     public void storeEvents(@RequestBody EventsPackage events) {
+
         System.out.println("Tenant ID: " + events.getTenantId());
+
+        for (SakaiHedexEvent event : events.getEvents()) {
+            System.out.println("Event: " + event);
+        }
     }
 }

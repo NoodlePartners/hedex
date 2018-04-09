@@ -1,9 +1,8 @@
 package com.noodle.hedex.sakai.rest;
 
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Data;
 
-@Setter @Getter
+@Data
 public class SakaiHedexEvent {
 
     private String resource;
