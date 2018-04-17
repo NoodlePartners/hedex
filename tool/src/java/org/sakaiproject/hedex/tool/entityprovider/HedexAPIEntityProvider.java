@@ -1,9 +1,13 @@
 package org.sakaiproject.hedex.tool.entityprovider;
 
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 
 import org.apache.commons.lang.StringUtils;
 
@@ -21,6 +25,7 @@ import org.sakaiproject.hedex.api.EngagementActivityRecord;
 import org.sakaiproject.hedex.api.EngagementActivityRecords;
 import org.sakaiproject.hedex.api.model.SessionDuration;
 
+import org.hibernate.Criteria;
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
@@ -48,6 +53,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
     private String tenantId;
     private ObjectMapper objectMapper = new ObjectMapper();
 
+    private final static DateFormat startDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+
     private ServerConfigurationService serverConfigurationService;
     private SessionFactory sessionFactory;
 
@@ -74,19 +81,32 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         String requestingAgent = (String) params.get(REQUESTING_AGENT);
 
-		/*if (StringUtils.isBlank(requestingAgent)) {
+		if (StringUtils.isBlank(requestingAgent)) {
             throw new EntityException("You must supply a tenantId and the RequestingAgent.", reference.getReference());
-        }*/
+        }
 
-        String terms = (String) params.get(TERMS);
-        String startDate = (String) params.get(START_DATE);
+        final String termsString = (String) params.get(TERMS);
+        final String[] terms = termsString != null ? termsString.split(",") : new String[] {};
+        final String startDateString = (String) params.get(START_DATE);
+        Date startDate = null;
+        if (!StringUtils.isBlank(startDateString)) {
+            try {
+                startDate = startDateFormat.parse(startDateString);
+            } catch (ParseException pe) {
+                log.error("Failed to parse supplied startDate '{}'. The date must be in ISO8601 format.", pe);
+            }
+        }
         String sendChangesOnly = (String) params.get(SEND_CHANGES_ONLY);
         String lastRunDate = (String) params.get(LAST_RUN_DATE);
         String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
 
         try {
             Session session = sessionFactory.openSession();
-            List<SessionDuration> sessionDurations = session.createCriteria(SessionDuration.class).list();
+            Criteria criteria = session.createCriteria(SessionDuration.class);
+            if (startDate != null) {
+                criteria.add(Restrictions.ge("startTime", startDate));
+            }
+            List<SessionDuration> sessionDurations = criteria.list();
             if (sessionDurations.size() > 0) {
                 EngagementActivityRecords eaRecords = new EngagementActivityRecords();
                 eaRecords.setTenantId(tenantId);
