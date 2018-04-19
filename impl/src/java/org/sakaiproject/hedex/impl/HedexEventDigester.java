@@ -32,8 +32,8 @@ public class HedexEventDigester implements Observer {
     private final String[] defaultEvents
         = new String[] {UsageSessionService.EVENT_LOGIN, UsageSessionService.EVENT_LOGOUT};
 
-    @Setter
-    private EventSender eventSender;
+    //@Setter
+    //private EventSender eventSender;
 
     @Setter
     private EventTrackingService eventTrackingService;
