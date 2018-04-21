@@ -201,6 +201,33 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
                             HedexAssignment hedexAssignment = new HedexAssignment();
                             hedexAssignment.setAssignmentLmsId(assignment.getId());
                             hedexAssignment.setPersonLmsId(submitter.getSubmitter());
+                            hedexAssignment.setAssignTitle(assignment.getTitle());
+                            hedexAssignment.setAssignDueDate(assignment.getDueDate().toString());
+
+                            if (submission.getGraded()) {
+                                hedexAssignment.setAssignGrade(submission.getGrade());
+                            }
+                            Assignment.GradeType gradeTypeEnum = assignment.getTypeOfGrade();
+
+                            String gradeType = null;
+                            switch(gradeTypeEnum) {
+                                case GRADE_TYPE_NONE:
+                                    gradeType = "NONE"; break;
+                                case LETTER_GRADE_TYPE:
+                                    gradeType = "LETTER"; break;
+                                case UNGRADED_GRADE_TYPE:
+                                    gradeType = "UNGRADED"; break;
+                                case SCORE_GRADE_TYPE:
+                                    gradeType = "POINTS"; break;
+                                case PASS_FAIL_GRADE_TYPE:
+                                    gradeType = "PASS/FAIL"; break;
+                                case CHECK_GRADE_TYPE:
+                                    gradeType = "CHECK"; break;
+                                default:
+                                    gradeType = "UNKNOWN";
+                            }
+
+                            hedexAssignment.setAssignGradeScheme(gradeType);
                             hedexAssignments.add(hedexAssignment);
                         }
                     }
