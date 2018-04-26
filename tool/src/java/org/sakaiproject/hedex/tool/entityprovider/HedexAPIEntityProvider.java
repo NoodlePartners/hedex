@@ -14,8 +14,6 @@ import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
 
-import org.sakaiproject.authz.api.SecurityService;
-import org.sakaiproject.authz.api.SecurityAdvisor;
 import org.sakaiproject.component.api.ServerConfigurationService;
 import org.sakaiproject.entitybroker.EntityReference;
 import org.sakaiproject.entitybroker.EntityView;
@@ -29,19 +27,12 @@ import org.sakaiproject.entitybroker.util.AbstractEntityProvider;
 import org.sakaiproject.hedex.api.HedexAssignment;
 import org.sakaiproject.hedex.api.EngagementActivityRecord;
 import org.sakaiproject.hedex.api.EngagementActivityRecords;
+import org.sakaiproject.hedex.api.model.AssignmentSubmissions;
 import org.sakaiproject.hedex.api.model.SessionDuration;
-import org.sakaiproject.assignment.api.AssignmentService;
-import org.sakaiproject.assignment.api.AssignmentServiceConstants;
-import org.sakaiproject.assignment.api.model.Assignment;
-import org.sakaiproject.assignment.api.model.AssignmentSubmission;
-import org.sakaiproject.assignment.api.model.AssignmentSubmissionSubmitter;
-import org.sakaiproject.site.api.SiteService;
 
 import org.hibernate.Criteria;
-import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import org.hibernate.Transaction;
 import org.hibernate.criterion.Restrictions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -69,9 +60,6 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
     private ServerConfigurationService serverConfigurationService;
     private SessionFactory sessionFactory;
-    private AssignmentService assignmentService;
-    private SecurityService securityService;
-    private SiteService siteService;
 
     public void init() {
         tenantId = serverConfigurationService.getString("hedex.tenantId", "UNSPECIFIED");
@@ -167,78 +155,34 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
         String lastRunDate = (String) params.get(LAST_RUN_DATE);
         String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
 
-        // Get all the sites in this instance
-        List<String> siteIds = siteService.getSiteIds(SiteService.SelectionType.NON_USER, null, null, null, SiteService.SortType.NONE, null);
-
-        SecurityAdvisor advisor = new SecurityAdvisor() {
-
-            public SecurityAdvisor.SecurityAdvice isAllowed(String userId, String function, String reference) {
-
-                if (function.equals(AssignmentServiceConstants.SECURE_ACCESS_ASSIGNMENT)) {
-                    return SecurityAdvisor.SecurityAdvice.ALLOWED;
-                } else {
-                    return SecurityAdvisor.SecurityAdvice.PASS;
-                }
-            }
-        };
-
-        securityService.pushAdvisor(advisor);
-
         try {
+            Session session = sessionFactory.openSession();
+            Criteria criteria = session.createCriteria(AssignmentSubmissions.class);
+            if (startDate != null) {
+                criteria.add(Restrictions.gt("dueDate", startDate));
+            }
+            List<AssignmentSubmissions> assignmentSubmissionss = criteria.list();
             List<HedexAssignment> hedexAssignments = new ArrayList<>();
-            for (String siteId : siteIds) {
-                Collection<Assignment> assignmentsForContext = null;
-                try {
-                    assignmentsForContext = assignmentService.getAssignmentsForContext(siteId);
-                } catch (IllegalArgumentException iae) {
-                    log.error("Failed to get assignments for siteId " + siteId, iae);
-                    continue;
-                }
-                for (Assignment assignment : assignmentsForContext) {
-                    Set<AssignmentSubmission> submissions = (Set<AssignmentSubmission>) assignmentService.getSubmissions(assignment);
-                    for (AssignmentSubmission submission : submissions) {
-                        for (AssignmentSubmissionSubmitter submitter : submission.getSubmitters()) {
-                            HedexAssignment hedexAssignment = new HedexAssignment();
-                            hedexAssignment.setAssignmentLmsId(assignment.getId());
-                            hedexAssignment.setPersonLmsId(submitter.getSubmitter());
-                            hedexAssignment.setAssignTitle(assignment.getTitle());
-                            hedexAssignment.setAssignDueDate(assignment.getDueDate().toString());
-
-                            if (submission.getGraded()) {
-                                hedexAssignment.setAssignGrade(submission.getGrade());
-                            }
-                            Assignment.GradeType gradeTypeEnum = assignment.getTypeOfGrade();
-
-                            String gradeType = null;
-                            switch(gradeTypeEnum) {
-                                case GRADE_TYPE_NONE:
-                                    gradeType = "NONE"; break;
-                                case LETTER_GRADE_TYPE:
-                                    gradeType = "LETTER"; break;
-                                case UNGRADED_GRADE_TYPE:
-                                    gradeType = "UNGRADED"; break;
-                                case SCORE_GRADE_TYPE:
-                                    gradeType = "POINTS"; break;
-                                case PASS_FAIL_GRADE_TYPE:
-                                    gradeType = "PASS/FAIL"; break;
-                                case CHECK_GRADE_TYPE:
-                                    gradeType = "CHECK"; break;
-                                default:
-                                    gradeType = "UNKNOWN";
-                            }
-
-                            hedexAssignment.setAssignGradeScheme(gradeType);
-                            hedexAssignments.add(hedexAssignment);
-                        }
-                    }
+            if (assignmentSubmissionss.size() > 0) {
+                for (AssignmentSubmissions submissions : assignmentSubmissionss) {
+                    HedexAssignment hedexAssignment = new HedexAssignment();
+                    hedexAssignment.setAssignmentLmsId(submissions.getAssignmentId());
+                    hedexAssignment.setPersonLmsId(submissions.getUserId());
+                    hedexAssignment.setAssignTitle(submissions.getTitle());
+                    hedexAssignment.setAssignDueDate(submissions.getDueDate().toString());
+                    hedexAssignment.setAssignScore(submissions.getLastScore());
+                    hedexAssignment.setAssignLoScore(submissions.getLowestScore().toString());
+                    hedexAssignment.setAssignHiScore(submissions.getHighestScore().toString());
+                    hedexAssignment.setAssignFirstAttmpt(submissions.getFirstScore());
+                    hedexAssignment.setAssignLastAttmpt(submissions.getLastScore());
+                    hedexAssignment.setAssignAvgAttmpt(submissions.getAverageScore().toString());
+                    hedexAssignments.add(hedexAssignment);
                 }
             }
             String json = objectMapper.writeValueAsString(hedexAssignments);
             return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
         } catch (Exception e) {
             log.error("Failed to serialise to JSON", e);
-        } finally {
-            securityService.popAdvisor(advisor);
         }
         return null;
     }
