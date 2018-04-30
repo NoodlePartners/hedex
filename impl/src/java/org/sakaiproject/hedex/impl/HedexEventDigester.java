@@ -42,7 +42,8 @@ public class HedexEventDigester implements Observer {
     private final String[] defaultEvents
         = new String[] { UsageSessionService.EVENT_LOGIN
                             , UsageSessionService.EVENT_LOGOUT
-                            , AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION };
+                            , AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION
+                            , AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION };
 
     //@Setter
     //private EventSender eventSender;
@@ -112,6 +113,50 @@ public class HedexEventDigester implements Observer {
                     } catch (Exception e) {
                         log.error("Failed to in insert new SessionDuration", e);
                     }
+                } else if (AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION.equals(eventName)) {
+                    String reference = event.getResource();
+                    // We need to check for the fully formed submit event.
+                    if (reference.contains("/")) {
+                        AssignmentReferenceReckoner.AssignmentReference submissionReference
+                            = AssignmentReferenceReckoner
+                                .newAssignmentReferenceReckoner(null, null, null, null, null, reference, null);
+                        String siteId = event.getContext();
+                        String assignmentId = submissionReference.getContainer();
+                        try {
+                            Assignment assignment = assignmentService.getAssignment(assignmentId);
+                            String userId = event.getUserId();
+                            Assignment.GradeType gradeType = assignment.getTypeOfGrade();
+                            // Lookup the current AssignmentSubmissions record. There should only
+                            // be <= 1 for this user and assignment.
+                            Session session = sessionFactory.openSession();
+                            List<AssignmentSubmissions> assignmentSubmissionss
+                                = session.createCriteria(AssignmentSubmissions.class)
+                                    .add(Restrictions.eq("userId", userId))
+                                    .add(Restrictions.eq("assignmentId", assignmentId)).list();
+                            if (assignmentSubmissionss.size() != 1) {
+                                // No record yet. Create one.
+                                AssignmentSubmissions as = new AssignmentSubmissions();
+                                as.setUserId(userId);
+                                as.setAssignmentId(assignmentId);
+                                as.setSiteId(siteId);
+                                as.setTitle(assignment.getTitle());
+                                as.setDueDate(Date.from(assignment.getDueDate()));
+                                as.setNumSubmissions(1);
+
+                                Transaction tx = session.beginTransaction();
+                                session.save(as);
+                                tx.commit();
+                            } else {
+                                AssignmentSubmissions as = assignmentSubmissionss.get(0);
+                                as.setNumSubmissions(as.getNumSubmissions() + 1);
+                                Transaction tx = session.beginTransaction();
+                                session.save(as);
+                                tx.commit();
+                            }
+                        } catch (Exception e) {
+                            log.error("Failed to in insert/update AssignmentSubmissions", e);
+                        }
+                    }
                 } else if (AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION.equals(eventName)) {
                     String reference = event.getResource();
                     AssignmentReferenceReckoner.AssignmentReference submissionReference
@@ -131,23 +176,16 @@ public class HedexEventDigester implements Observer {
                         // Lookup the current AssignmentSubmissions record. There should only
                         // be <= 1 for this user and submission.
                         Session session = sessionFactory.openSession();
+                        log.debug("Searching for record for user id {} and assignment id {}", userId, assignmentId);
                         List<AssignmentSubmissions> assignmentSubmissionss
                             = session.createCriteria(AssignmentSubmissions.class)
                                 .add(Restrictions.eq("userId", userId))
-                                .add(Restrictions.eq("submissionId", submissionId)).list();
+                                .add(Restrictions.eq("assignmentId", assignmentId)).list();
                         if (assignmentSubmissionss.size() != 1) {
-                            // No record yet. Create one.
-                            AssignmentSubmissions as = new AssignmentSubmissions();
-                            as.setUserId(userId);
-                            as.setAssignmentId(assignmentId);
-                            as.setSubmissionId(submissionId);
-                            as.setSiteId(siteId);
-                            as.setTitle(assignment.getTitle());
-                            as.setDueDate(Date.from(assignment.getDueDate()));
-                            as.setNumSubmissions(1);
-
-                            if (submission.getGraded()) {
-                                String grade = submission.getGrade();
+                        } else {
+                            AssignmentSubmissions as = assignmentSubmissionss.get(0);
+                            String grade = submission.getGrade();
+                            if (as.getFirstScore() == null) {
                                 as.setFirstScore(grade);
                                 as.setLastScore(grade);
                                 if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
@@ -160,18 +198,8 @@ public class HedexEventDigester implements Observer {
                                     } catch (NumberFormatException nfe) {
                                     }
                                 }
-                            }
-                            Transaction tx = session.beginTransaction();
-                            session.save(as);
-                            tx.commit();
-                        } else {
-                            AssignmentSubmissions as = assignmentSubmissionss.get(0);
-                            System.out.println("HERE1");
-                            if (submission.getGraded()) {
-                                System.out.println("HERE2");
-                                String grade = submission.getGrade();
+                            } else {
                                 as.setLastScore(grade);
-                                as.setNumSubmissions(as.getNumSubmissions() + 1);
                                 if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
                                     // This is a numeric grade, so we can do numeric stuff with it.
                                     try {
