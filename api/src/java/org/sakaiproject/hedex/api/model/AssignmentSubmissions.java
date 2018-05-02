@@ -33,8 +33,8 @@ public class AssignmentSubmissions {
     @Column(name = "ASSIGNMENT_ID", length = 36, nullable = false)
     private String assignmentId;
 
-    //@Column(name = "SUBMISSION_ID", length = 36, unique = true, nullable = false)
-    //private String submissionId;
+    @Column(name = "SUBMISSION_ID", length = 36, unique = true, nullable = false)
+    private String submissionId;
 
     @Column(name = "SITE_ID", length = 36, nullable = false)
     private String siteId;
