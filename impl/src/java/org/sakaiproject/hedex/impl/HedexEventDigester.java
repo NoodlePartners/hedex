@@ -13,7 +13,6 @@ import org.sakaiproject.assignment.api.AssignmentConstants;
 import org.sakaiproject.assignment.api.AssignmentReferenceReckoner;
 import org.sakaiproject.assignment.api.model.Assignment;
 import org.sakaiproject.assignment.api.model.AssignmentSubmission;
-import org.sakaiproject.assignment.api.model.AssignmentSubmissionSubmitter;
 
 import org.sakaiproject.component.api.ServerConfigurationService;
 import org.sakaiproject.event.api.Event;
@@ -44,9 +43,6 @@ public class HedexEventDigester implements Observer {
                             , UsageSessionService.EVENT_LOGOUT
                             , AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION
                             , AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION };
-
-    //@Setter
-    //private EventSender eventSender;
 
     @Setter
     private EventTrackingService eventTrackingService;
@@ -82,12 +78,12 @@ public class HedexEventDigester implements Observer {
                 log.debug("Handling event '{}' ...", eventName);
 
                 String sessionId = event.getSessionId();
+                String eventUserId = event.getUserId();
 
                 if (UsageSessionService.EVENT_LOGIN.equals(eventName)) {
-
                     try {
                         SessionDuration sd = new SessionDuration();
-                        sd.setUserId(event.getUserId());
+                        sd.setUserId(eventUserId);
                         sd.setSessionId(sessionId);
                         sd.setStartTime(event.getEventTime());
                         Session session = sessionFactory.openSession();
@@ -126,20 +122,19 @@ public class HedexEventDigester implements Observer {
                         try {
                             Assignment assignment = assignmentService.getAssignment(assignmentId);
 
-                            String userId = event.getUserId();
                             Assignment.GradeType gradeType = assignment.getTypeOfGrade();
                             // Lookup the current AssignmentSubmissions record. There should only
                             // be <= 1 for this user and assignment.
                             Session session = sessionFactory.openSession();
                             List<AssignmentSubmissions> assignmentSubmissionss
                                 = session.createCriteria(AssignmentSubmissions.class)
-                                    //.add(Restrictions.eq("userId", userId))
+                                    .add(Restrictions.eq("userId", eventUserId))
                                     .add(Restrictions.eq("assignmentId", assignmentId))
                                     .add(Restrictions.eq("submissionId", submissionId)).list();
                             if (assignmentSubmissionss.size() != 1) {
                                 // No record yet. Create one.
                                 AssignmentSubmissions as = new AssignmentSubmissions();
-                                as.setUserId(userId);
+                                as.setUserId(eventUserId);
                                 as.setAssignmentId(assignmentId);
                                 as.setSubmissionId(submissionId);
                                 as.setSiteId(siteId);
@@ -152,20 +147,10 @@ public class HedexEventDigester implements Observer {
                                 tx.commit();
                             } else {
                                 AssignmentSubmissions as = assignmentSubmissionss.get(0);
-
-                                // If this is not a grouped assignment, there's been a submission already and the
-                                // submission was made by another user, this is the grading that fires a submission
-                                // event in error.
-                                // See https://jira.sakaiproject.org/browse/SAK-39939.
-                                if (!assignment.getIsGroup() && !as.getUserId().equals(userId)) {
-                                    log.debug("This is a grading, not a submission");
-                                    grade(as, assignmentService.getSubmission(submissionId), gradeType);
-                                } else {
-                                    as.setNumSubmissions(as.getNumSubmissions() + 1);
-                                    Transaction tx = session.beginTransaction();
-                                    session.save(as);
-                                    tx.commit();
-                                }
+                                as.setNumSubmissions(as.getNumSubmissions() + 1);
+                                Transaction tx = session.beginTransaction();
+                                session.save(as);
+                                tx.commit();
                             }
                         } catch (Exception e) {
                             log.error("Failed to in insert/update AssignmentSubmissions", e);
@@ -184,74 +169,56 @@ public class HedexEventDigester implements Observer {
                     try {
                         Assignment assignment = assignmentService.getAssignment(assignmentId);
                         AssignmentSubmission submission = assignmentService.getSubmission(submissionId);
-                        Set<AssignmentSubmissionSubmitter> submitters = submission.getSubmitters();
-                        String userId = submitters.iterator().next().getSubmitter();
                         Assignment.GradeType gradeType = assignment.getTypeOfGrade();
                         // Lookup the current AssignmentSubmissions record. There should only
                         // be <= 1 for this user and submission.
                         Session session = sessionFactory.openSession();
-                        log.debug("Searching for record for user id {} and assignment id {}", userId, assignmentId);
+                        log.debug("Searching for record for user id {} and assignment id {}", eventUserId, assignmentId);
                         List<AssignmentSubmissions> assignmentSubmissionss
                             = session.createCriteria(AssignmentSubmissions.class)
-                                .add(Restrictions.eq("userId", userId))
-                                .add(Restrictions.eq("assignmentId", assignmentId)).list();
+                                //.add(Restrictions.eq("userId", eventUserId))
+                                .add(Restrictions.eq("assignmentId", assignmentId))
+                                .add(Restrictions.eq("submissionId", submissionId)).list();
                         if (assignmentSubmissionss.size() != 1) {
                         } else {
-                            grade(assignmentSubmissionss.get(0), submission, gradeType);
+                            AssignmentSubmissions as = assignmentSubmissionss.get(0);
+                            String grade = submission.getGrade();
+                            if (as.getFirstScore() == null) {
+                                as.setFirstScore(grade);
+                                as.setLastScore(grade);
+                                if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
+                                    // This is a numeric grade, so we can do numeric stuff with it.
+                                    try {
+                                        int numericScore = Integer.parseInt(grade);
+                                        as.setLowestScore(numericScore);
+                                        as.setHighestScore(numericScore);
+                                        as.setAverageScore((float)numericScore);
+                                    } catch (NumberFormatException nfe) {
+                                    }
+                                }
+                            } else {
+                                as.setLastScore(grade);
+                                if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
+                                    // This is a numeric grade, so we can do numeric stuff with it.
+                                    try {
+                                        int numericScore = Integer.parseInt(grade);
+                                        if (numericScore < as.getLowestScore()) as.setLowestScore(numericScore);
+                                        else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
+                                        as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
+                                    } catch (NumberFormatException nfe) {
+                                    }
+                                }
+                            }
+                            Transaction tx = session.beginTransaction();
+                            session.save(as);
+                            tx.commit();
+
                         }
                     } catch (Exception e) {
                         log.error("Failed to in insert/update AssignmentSubmissions", e);
                     }
                 }
-
-                /*synchronized (batchedEvents) {
-                    log.debug("Added '{}' to batched events ...", eventName);
-                    batchedEvents.add(event);
-                    if (batchedEvents.size() == batchSize) {
-                        log.debug("Sending batch of events ...");
-                        List<Event> copy = new ArrayList<>(batchedEvents);
-                        new Thread(() -> {
-                            eventSender.sendEvents(copy);
-                        }).start();
-                        batchedEvents.clear();
-                    }
-                }*/
             }
         }
-    }
-
-    private void grade(AssignmentSubmissions as, AssignmentSubmission submission, Assignment.GradeType gradeType) {
-
-        String grade = submission.getGrade();
-        if (as.getFirstScore() == null) {
-            as.setFirstScore(grade);
-            as.setLastScore(grade);
-            if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
-                // This is a numeric grade, so we can do numeric stuff with it.
-                try {
-                    int numericScore = Integer.parseInt(grade);
-                    as.setLowestScore(numericScore);
-                    as.setHighestScore(numericScore);
-                    as.setAverageScore((float)numericScore);
-                } catch (NumberFormatException nfe) {
-                }
-            }
-        } else {
-            as.setLastScore(grade);
-            if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
-                // This is a numeric grade, so we can do numeric stuff with it.
-                try {
-                    int numericScore = Integer.parseInt(grade);
-                    if (numericScore < as.getLowestScore()) as.setLowestScore(numericScore);
-                    else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
-                    as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
-                } catch (NumberFormatException nfe) {
-                }
-            }
-        }
-        Session session = sessionFactory.openSession();
-        Transaction tx = session.beginTransaction();
-        session.update(as);
-        tx.commit();
     }
 }

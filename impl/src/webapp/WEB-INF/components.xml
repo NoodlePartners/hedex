@@ -4,14 +4,8 @@
         xsi:schemaLocation="http://www.springframework.org/schema/beans
         http://www.springframework.org/schema/beans/spring-beans.xsd">
 
-    <!--bean id="org.sakaiproject.hedex.impl.EventSender"
-        class="org.sakaiproject.hedex.impl.EventSender" init-method="init">
-		<property name="serverConfigurationService" ref="org.sakaiproject.component.api.ServerConfigurationService" />
-    </bean-->
-
     <bean id="org.sakaiproject.hedex.impl.HedexEventDigester"
         class="org.sakaiproject.hedex.impl.HedexEventDigester" init-method="init">
-		<!--property name="eventSender" ref="org.sakaiproject.hedex.impl.EventSender" /-->
 		<property name="assignmentService" ref="org.sakaiproject.assignment.api.AssignmentService" />
 		<property name="eventTrackingService" ref="org.sakaiproject.event.api.EventTrackingService" />
 		<property name="serverConfigurationService" ref="org.sakaiproject.component.api.ServerConfigurationService" />
