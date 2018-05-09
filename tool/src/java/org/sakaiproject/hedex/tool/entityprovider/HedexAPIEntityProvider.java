@@ -176,6 +176,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
                     hedexAssignment.setAssignFirstAttmpt(submissions.getFirstScore());
                     hedexAssignment.setAssignLastAttmpt(submissions.getLastScore());
                     hedexAssignment.setAssignAvgAttmpt(submissions.getAverageScore().toString());
+                    hedexAssignment.setAssignNumAttempt(submissions.getNumSubmissions().toString());
                     hedexAssignments.add(hedexAssignment);
                 }
             }
