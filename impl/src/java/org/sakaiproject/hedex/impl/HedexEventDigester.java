@@ -13,10 +13,11 @@ import org.sakaiproject.assignment.api.AssignmentConstants;
 import org.sakaiproject.assignment.api.AssignmentReferenceReckoner;
 import org.sakaiproject.assignment.api.model.Assignment;
 import org.sakaiproject.assignment.api.model.AssignmentSubmission;
-
 import org.sakaiproject.component.api.ServerConfigurationService;
 import org.sakaiproject.event.api.Event;
 import org.sakaiproject.event.api.EventTrackingService;
+import org.sakaiproject.event.api.UsageSessionService;
+import org.sakaiproject.presence.api.PresenceService;
 
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
@@ -24,9 +25,8 @@ import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.hibernate.criterion.Restrictions;
 
-import org.sakaiproject.event.api.UsageSessionService;
-
 import org.sakaiproject.hedex.api.model.AssignmentSubmissions;
+import org.sakaiproject.hedex.api.model.CourseVisits;
 import org.sakaiproject.hedex.api.model.SessionDuration;
 
 import lombok.Setter;
@@ -35,14 +35,14 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class HedexEventDigester implements Observer {
 
-    private List<String> handledEvents;
-    private int batchSize;
-    private List<Event> batchedEvents = new ArrayList<>();
-    private final String[] defaultEvents
-        = new String[] { UsageSessionService.EVENT_LOGIN
-                            , UsageSessionService.EVENT_LOGOUT
-                            , AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION
-                            , AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION };
+    private final String PRESENCE_SUFFIX = "-presence";
+
+    private final List<String> handledEvents
+        = Arrays.asList(UsageSessionService.EVENT_LOGIN
+                        , UsageSessionService.EVENT_LOGOUT
+                        , AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION
+                        , AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION
+                        , PresenceService.EVENT_PRESENCE);
 
     @Setter
     private EventTrackingService eventTrackingService;
@@ -60,11 +60,7 @@ public class HedexEventDigester implements Observer {
 
         log.debug("HedexEventDigester.init()");
 
-        String[] events = serverConfigurationService.getStrings("hedex.events");
-        handledEvents = Arrays.asList(events == null ? defaultEvents : events);
         log.debug("Handled events: {}", String.join(",", handledEvents));
-        batchSize = serverConfigurationService.getInt("hedex.batchSize", 10);
-        log.debug("batchSize: {}", batchSize);
         eventTrackingService.addObserver(this);
     }
 
@@ -79,6 +75,7 @@ public class HedexEventDigester implements Observer {
 
                 String sessionId = event.getSessionId();
                 String eventUserId = event.getUserId();
+                String reference = event.getResource();
 
                 if (UsageSessionService.EVENT_LOGIN.equals(eventName)) {
                     try {
@@ -110,7 +107,6 @@ public class HedexEventDigester implements Observer {
                         log.error("Failed to in insert new SessionDuration", e);
                     }
                 } else if (AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION.equals(eventName)) {
-                    String reference = event.getResource();
                     // We need to check for the fully formed submit event.
                     if (reference.contains("/")) {
                         AssignmentReferenceReckoner.AssignmentReference submissionReference
@@ -157,7 +153,6 @@ public class HedexEventDigester implements Observer {
                         }
                     }
                 } else if (AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION.equals(eventName)) {
-                    String reference = event.getResource();
                     AssignmentReferenceReckoner.AssignmentReference submissionReference
                         = AssignmentReferenceReckoner
                             .newAssignmentReferenceReckoner(null, null, null, null, null, reference, null);
@@ -212,11 +207,41 @@ public class HedexEventDigester implements Observer {
                             Transaction tx = session.beginTransaction();
                             session.save(as);
                             tx.commit();
-
                         }
                     } catch (Exception e) {
                         log.error("Failed to in insert/update AssignmentSubmissions", e);
                     }
+                } else if (PresenceService.EVENT_PRESENCE.equals(eventName)) {
+                    // Parse out the course id
+                    String compoundId = reference.substring(reference.lastIndexOf("/") + 1);
+                    String siteId = compoundId.substring(0, compoundId.indexOf(PRESENCE_SUFFIX));
+                    System.out.println("SITE ID: " + siteId);
+
+                    if (siteId.startsWith("~")) {
+                        // This is a user workspace
+                        return;
+                    }
+
+                    Session session = sessionFactory.openSession();
+
+                    List<CourseVisits> courseVisitss = session.createCriteria(CourseVisits.class)
+                        .add(Restrictions.eq("userId", eventUserId))
+                        .add(Restrictions.eq("siteId", siteId)).list();
+
+                    CourseVisits courseVisits = null;
+
+                    if (courseVisitss.size() == 1) {
+                        courseVisits = courseVisitss.get(0);
+                        courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);
+                    } else {
+                        courseVisits = new CourseVisits();
+                        courseVisits.setUserId(eventUserId);
+                        courseVisits.setSiteId(siteId);
+                        courseVisits.setNumVisits(1L);
+                    }
+                    Transaction tx = session.beginTransaction();
+                    session.save(courseVisits);
+                    tx.commit();
                 }
             }
         }

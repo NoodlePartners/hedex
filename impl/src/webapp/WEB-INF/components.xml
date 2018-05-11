@@ -17,6 +17,7 @@
         <property name="annotatedClasses">
             <list>
                 <value>org.sakaiproject.hedex.api.model.AssignmentSubmissions</value>
+                <value>org.sakaiproject.hedex.api.model.CourseVisits</value>
                 <value>org.sakaiproject.hedex.api.model.SessionDuration</value>
             </list>
         </property>
