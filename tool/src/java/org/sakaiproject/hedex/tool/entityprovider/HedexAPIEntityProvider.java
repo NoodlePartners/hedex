@@ -24,11 +24,17 @@ import org.sakaiproject.entitybroker.entityprovider.extension.ActionReturn;
 import org.sakaiproject.entitybroker.entityprovider.extension.Formats;
 import org.sakaiproject.entitybroker.exception.EntityException;
 import org.sakaiproject.entitybroker.util.AbstractEntityProvider;
-import org.sakaiproject.hedex.api.HedexAssignment;
+import org.sakaiproject.hedex.api.AssignmentRecord;
+import org.sakaiproject.hedex.api.AssignmentRecords;
+import org.sakaiproject.hedex.api.AttendanceRecord;
+import org.sakaiproject.hedex.api.AttendanceRecords;
 import org.sakaiproject.hedex.api.EngagementActivityRecord;
 import org.sakaiproject.hedex.api.EngagementActivityRecords;
 import org.sakaiproject.hedex.api.model.AssignmentSubmissions;
+import org.sakaiproject.hedex.api.model.CourseVisits;
 import org.sakaiproject.hedex.api.model.SessionDuration;
+import org.sakaiproject.site.api.Site;
+import org.sakaiproject.site.api.SiteService;
 
 import org.hibernate.Criteria;
 import org.hibernate.Session;
@@ -45,7 +51,6 @@ import lombok.extern.slf4j.Slf4j;
 public class HedexAPIEntityProvider extends AbstractEntityProvider
     implements AutoRegisterEntityProvider, ActionsExecutable {
 
-    private final static String TENANT_ID = "tenantId";
     private final static String REQUESTING_AGENT = "RequestingAgent";
     private final static String TERMS = "terms";
     private final static String START_DATE = "startDate";
@@ -60,6 +65,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
     private ServerConfigurationService serverConfigurationService;
     private SessionFactory sessionFactory;
+    private SiteService siteService;
 
     public void init() {
         tenantId = serverConfigurationService.getString("hedex.tenantId", "UNSPECIFIED");
@@ -162,25 +168,65 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
                 criteria.add(Restrictions.gt("dueDate", startDate));
             }
             List<AssignmentSubmissions> assignmentSubmissionss = criteria.list();
-            List<HedexAssignment> hedexAssignments = new ArrayList<>();
+            List<AssignmentRecord> records = new ArrayList<>();
             if (assignmentSubmissionss.size() > 0) {
                 for (AssignmentSubmissions submissions : assignmentSubmissionss) {
-                    HedexAssignment hedexAssignment = new HedexAssignment();
-                    hedexAssignment.setAssignmentLmsId(submissions.getAssignmentId());
-                    hedexAssignment.setPersonLmsId(submissions.getUserId());
-                    hedexAssignment.setAssignTitle(submissions.getTitle());
-                    hedexAssignment.setAssignDueDate(submissions.getDueDate().toString());
-                    hedexAssignment.setAssignScore(submissions.getLastScore());
-                    hedexAssignment.setAssignLoScore(submissions.getLowestScore().toString());
-                    hedexAssignment.setAssignHiScore(submissions.getHighestScore().toString());
-                    hedexAssignment.setAssignFirstAttmpt(submissions.getFirstScore());
-                    hedexAssignment.setAssignLastAttmpt(submissions.getLastScore());
-                    hedexAssignment.setAssignAvgAttmpt(submissions.getAverageScore().toString());
-                    hedexAssignment.setAssignNumAttempt(submissions.getNumSubmissions().toString());
-                    hedexAssignments.add(hedexAssignment);
+                    AssignmentRecord assignmentRecord = new AssignmentRecord();
+                    assignmentRecord.setAssignmentLmsId(submissions.getAssignmentId());
+                    assignmentRecord.setPersonLmsId(submissions.getUserId());
+                    assignmentRecord.setAssignTitle(submissions.getTitle());
+                    assignmentRecord.setAssignDueDate(submissions.getDueDate().toString());
+                    assignmentRecord.setAssignScore(submissions.getLastScore());
+                    assignmentRecord.setAssignLoScore(submissions.getLowestScore().toString());
+                    assignmentRecord.setAssignHiScore(submissions.getHighestScore().toString());
+                    assignmentRecord.setAssignFirstAttmpt(submissions.getFirstScore());
+                    assignmentRecord.setAssignLastAttmpt(submissions.getLastScore());
+                    assignmentRecord.setAssignAvgAttmpt(submissions.getAverageScore().toString());
+                    assignmentRecord.setAssignNumAttempt(submissions.getNumSubmissions().toString());
+                    records.add(assignmentRecord);
                 }
             }
-            String json = objectMapper.writeValueAsString(hedexAssignments);
+            AssignmentRecords assignmentRecords = new AssignmentRecords();
+            assignmentRecords.setTenantId(tenantId);
+            assignmentRecords.setAssignments(records);
+            String json = objectMapper.writeValueAsString(assignmentRecords);
+            return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
+        } catch (Exception e) {
+            log.error("Failed to serialise to JSON", e);
+        }
+        return null;
+    }
+
+    @EntityCustomAction(action = "Get_Retention_Engagement_Attendance", viewKey = EntityView.VIEW_LIST)
+	public ActionReturn getAttendance(EntityReference reference, Map<String, Object> params) {
+
+        String userId = getCheckedUser(reference);
+        String requestingAgent = getCheckedRequestingAgent(params, reference);
+        final String[] terms = getTerms(params);
+        Date startDate = getValidatedDate((String) params.get(START_DATE));
+        String sendChangesOnly = (String) params.get(SEND_CHANGES_ONLY);
+        String lastRunDate = (String) params.get(LAST_RUN_DATE);
+        String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
+
+        try {
+            Session session = sessionFactory.openSession();
+            Criteria criteria = session.createCriteria(CourseVisits.class);
+            List<CourseVisits> courseVisitss = criteria.list();
+            List<AttendanceRecord> records = new ArrayList<>();
+            if (courseVisitss.size() > 0) {
+                for (CourseVisits courseVisits : courseVisitss) {
+                    AttendanceRecord attendanceRecord = new AttendanceRecord();
+                    attendanceRecord.setPersonLmsId(courseVisits.getUserId());
+                    attendanceRecord.setTotalAttendanceEvents(courseVisits.getNumVisits().toString());
+                    attendanceRecord.setSectionCourseNumber(courseVisits.getSiteId());
+                    Site site = siteService.getSite(courseVisits.getSiteId());
+                    records.add(attendanceRecord);
+                }
+            }
+            AttendanceRecords attendanceRecords = new AttendanceRecords();
+            attendanceRecords.setTenantId(tenantId);
+            attendanceRecords.setAttendance(records);
+            String json = objectMapper.writeValueAsString(attendanceRecords);
             return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
         } catch (Exception e) {
             log.error("Failed to serialise to JSON", e);
