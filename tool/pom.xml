@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.sakaiproject.hedex</groupId>
         <artifactId>hedex-base</artifactId>
-        <version>12-SNAPSHOT</version>
+        <version>13-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -31,7 +31,7 @@
         <dependency>
             <groupId>org.sakaiproject.hedex</groupId>
             <artifactId>hedex-api</artifactId>
-            <version>12-SNAPSHOT</version>
+            <version>13-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
