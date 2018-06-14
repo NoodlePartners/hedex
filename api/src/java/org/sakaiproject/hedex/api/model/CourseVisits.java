@@ -1,10 +1,14 @@
 package org.sakaiproject.hedex.api.model;
 
+import java.util.Date;
+
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
 import javax.persistence.Table;
+import javax.persistence.Temporal;
+import javax.persistence.TemporalType;
 import javax.persistence.UniqueConstraint;
 
 import lombok.Getter;
@@ -30,4 +34,8 @@ public class CourseVisits {
 
     @Column(name = "NUM_VISITS", nullable = false)
     private Long numVisits;
+
+    @Column(name = "LATEST_VISIT", columnDefinition="DATETIME", nullable = false)
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date latestVisit;
 }

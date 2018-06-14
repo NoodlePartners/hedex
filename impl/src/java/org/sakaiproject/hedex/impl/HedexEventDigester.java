@@ -239,6 +239,7 @@ public class HedexEventDigester implements Observer {
                         courseVisits.setSiteId(siteId);
                         courseVisits.setNumVisits(1L);
                     }
+                    courseVisits.setLatestVisit(event.getEventTime());
                     Transaction tx = session.beginTransaction();
                     session.save(courseVisits);
                     tx.commit();
