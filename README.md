@@ -38,6 +38,11 @@ defaults to 'hedex-api-user' and can be configured by:
 
 hedex.userId=some-other-user-id
 
+If you need to, you can disable the digester altogether. This might be useful in
+a cluster.
+
+hedex.digester.enabled=false
+
 Retrieving Data
 ---------------
 

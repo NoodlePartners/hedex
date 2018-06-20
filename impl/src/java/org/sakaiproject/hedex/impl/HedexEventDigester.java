@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.Observable;
@@ -12,9 +13,12 @@ import java.util.Set;
 
 import org.sakaiproject.assignment.api.AssignmentService;
 import org.sakaiproject.assignment.api.AssignmentConstants;
+import org.sakaiproject.assignment.api.AssignmentServiceConstants;
 import org.sakaiproject.assignment.api.AssignmentReferenceReckoner;
 import org.sakaiproject.assignment.api.model.Assignment;
 import org.sakaiproject.assignment.api.model.AssignmentSubmission;
+import org.sakaiproject.authz.api.SecurityAdvisor;
+import org.sakaiproject.authz.api.SecurityService;
 import org.sakaiproject.component.api.ServerConfigurationService;
 import org.sakaiproject.event.api.Event;
 import org.sakaiproject.event.api.EventTrackingService;
@@ -39,7 +43,7 @@ public class HedexEventDigester implements Observer {
 
     private final String PRESENCE_SUFFIX = "-presence";
 
-    private final List<String> handledEvents
+    private static final List<String> HANDLED_EVENTS
         = Arrays.asList(UsageSessionService.EVENT_LOGIN
                         , UsageSessionService.EVENT_LOGOUT
                         , AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION
@@ -48,6 +52,9 @@ public class HedexEventDigester implements Observer {
 
     @Setter
     private EventTrackingService eventTrackingService;
+
+    @Setter
+    private SecurityService securityService;
 
     @Setter
     private ServerConfigurationService serverConfigurationService;
@@ -59,30 +66,65 @@ public class HedexEventDigester implements Observer {
     private AssignmentService assignmentService;
 
     private ExecutorService executorService;
-
+    
     public void init() {
 
         log.debug("HedexEventDigester.init()");
 
-        log.debug("Handled events: {}", String.join(",", handledEvents));
-        eventTrackingService.addObserver(this);
-        int threadPoolSize = serverConfigurationService.getInt("hedex.digester.threadPoolSize", 20);
-        executorService = Executors.newFixedThreadPool(threadPoolSize);
+        if (serverConfigurationService.getBoolean("hedex.digester.enabled", true)) {
+            eventTrackingService.addObserver(this);
+            int threadPoolSize = serverConfigurationService.getInt("hedex.digester.threadPoolSize", 20);
+            executorService = Executors.newFixedThreadPool(threadPoolSize);
+        } else {
+            log.info("HEDEX event digester not enabled on this server");
+        }
+    }
+
+    public void destroy() {
+
+        log.debug("HedexEventDigester.destroy()");
+
+        if (executorService != null) {
+            executorService.shutdown();
+            try {
+                // Wait a while for existing tasks to terminate
+                if (!executorService.awaitTermination(20, TimeUnit.SECONDS)) {
+                    // We've waited 20 seconds. Cancel current tasks.
+                    executorService.shutdownNow();
+                    // Wait a while for tasks to respond to being cancelled
+                    if (!executorService.awaitTermination(20, TimeUnit.SECONDS)) {
+                       log.error("HEDEX executorService did not terminate within 20 seconds.");
+                    }
+                 }
+            } catch (InterruptedException ie) {
+                // (Re-)Cancel if current thread also interrupted
+                executorService.shutdownNow();
+                // Preserve interrupt status
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     public void update(Observable o, final Object arg) {
 
         if (arg instanceof Event) {
-            executorService.execute(() -> {
-                Event event = (Event) arg;
-                String eventName = event.getEvent();
-                if (handledEvents.contains(eventName)) {
+            Event event = (Event) arg;
+            String eventName = event.getEvent();
+            log.debug("Event '{}' ...", eventName);
+            String eventUserId = event.getUserId();
+            if (HANDLED_EVENTS.contains(eventName)  && !EventTrackingService.UNKNOWN_USER.equals(eventUserId)) {
+                try {
+                    sessionFactory.getCurrentSession().flush();
+                } catch (HibernateException he) {
+                    // This will be thrown if there is no current Hibernate session. Nothing to do.
+                }
+
+                executorService.execute(() -> {
 
                     log.debug("Handling event '{}' ...", eventName);
 
-                    String sessionId = event.getSessionId();
-                    String eventUserId = event.getUserId();
-                    String reference = event.getResource();
+                    final String sessionId = event.getSessionId();
+                    final String reference = event.getResource();
 
                     if (UsageSessionService.EVENT_LOGIN.equals(eventName)) {
                         try {
@@ -102,13 +144,14 @@ public class HedexEventDigester implements Observer {
                             Session session = sessionFactory.openSession();
                             List<SessionDuration> sessionDurations = session.createCriteria(SessionDuration.class)
                                 .add(Restrictions.eq("sessionId", sessionId)).list();
-                            if (sessionDurations.size() != 1) {
-                            } else {
+                            if (sessionDurations.size() == 1) {
                                 SessionDuration sd = sessionDurations.get(0);
                                 sd.setDuration(event.getEventTime().getTime() - sd.getStartTime().getTime());
                                 Transaction tx = session.beginTransaction();
                                 session.update(sd);
                                 tx.commit();
+                            } else {
+                                log.error("No SessionDuration for event sessionId: " + sessionId);
                             }
                         } catch (Exception e) {
                             log.error("Failed to in insert new SessionDuration", e);
@@ -117,8 +160,7 @@ public class HedexEventDigester implements Observer {
                         // We need to check for the fully formed submit event.
                         if (reference.contains("/")) {
                             AssignmentReferenceReckoner.AssignmentReference submissionReference
-                                = AssignmentReferenceReckoner
-                                    .newAssignmentReferenceReckoner(null, null, null, null, null, reference, null);
+                                = AssignmentReferenceReckoner.reckoner().reference(reference).reckon();
                             String siteId = event.getContext();
                             String assignmentId = submissionReference.getContainer();
                             String submissionId = submissionReference.getId();
@@ -134,7 +176,10 @@ public class HedexEventDigester implements Observer {
                                         .add(Restrictions.eq("userId", eventUserId))
                                         .add(Restrictions.eq("assignmentId", assignmentId))
                                         .add(Restrictions.eq("submissionId", submissionId)).list();
-                                if (assignmentSubmissionss.size() != 1) {
+
+                                assert assignmentSubmissionss.size() <= 1;
+
+                                if (assignmentSubmissionss.size() <= 0) {
                                     // No record yet. Create one.
                                     AssignmentSubmissions as = new AssignmentSubmissions();
                                     as.setUserId(eventUserId);
@@ -152,7 +197,7 @@ public class HedexEventDigester implements Observer {
                                     AssignmentSubmissions as = assignmentSubmissionss.get(0);
                                     as.setNumSubmissions(as.getNumSubmissions() + 1);
                                     Transaction tx = session.beginTransaction();
-                                    session.save(as);
+                                    session.update(as);
                                     tx.commit();
                                 }
                             } catch (Exception e) {
@@ -161,31 +206,42 @@ public class HedexEventDigester implements Observer {
                         }
                     } else if (AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION.equals(eventName)) {
                         AssignmentReferenceReckoner.AssignmentReference submissionReference
-                            = AssignmentReferenceReckoner
-                                .newAssignmentReferenceReckoner(null, null, null, null, null, reference, null);
+                            = AssignmentReferenceReckoner.reckoner().reference(reference).reckon();
 
-                        String siteId = submissionReference.getContext();
-                        String assignmentId = submissionReference.getContainer();
-                        String submissionId = submissionReference.getId();
+                        final String siteId = submissionReference.getContext();
+                        final String assignmentId = submissionReference.getContainer();
+                        final String submissionId = submissionReference.getId();
+
+						SecurityAdvisor sa = unlock(new String[] {AssignmentServiceConstants.SECURE_ACCESS_ASSIGNMENT_SUBMISSION
+														, AssignmentServiceConstants.SECURE_ACCESS_ASSIGNMENT
+														, AssignmentServiceConstants.SECURE_ADD_ASSIGNMENT_SUBMISSION});
 
                         try {
-                            Assignment assignment = assignmentService.getAssignment(assignmentId);
-                            AssignmentSubmission submission = assignmentService.getSubmission(submissionId);
-                            Assignment.GradeType gradeType = assignment.getTypeOfGrade();
-                            // Lookup the current AssignmentSubmissions record. There should only
-                            // be <= 1 for this user and submission.
                             Session session = sessionFactory.openSession();
-                            log.debug("Searching for record for user id {} and assignment id {}", eventUserId, assignmentId);
-                            List<AssignmentSubmissions> assignmentSubmissionss
+                            log.debug("Searching for record for assignment id {} and submission id {}"
+                                        , assignmentId, submissionId);
+                            final List<AssignmentSubmissions> assignmentSubmissionss
                                 = session.createCriteria(AssignmentSubmissions.class)
-                                    //.add(Restrictions.eq("userId", eventUserId))
                                     .add(Restrictions.eq("assignmentId", assignmentId))
                                     .add(Restrictions.eq("submissionId", submissionId)).list();
-                            if (assignmentSubmissionss.size() != 1) {
-                            } else {
+
+                            assert assignmentSubmissionss.size() == 1;
+
+                            final Assignment assignment = assignmentService.getAssignment(assignmentId);
+							assert assignment != null;
+                            final Assignment.GradeType gradeType = assignment.getTypeOfGrade();
+
+                            final AssignmentSubmission submission = assignmentService.getSubmission(submissionId);
+							assert submission != null;
+
+                            if (assignmentSubmissionss.size() == 1) {
+                                log.debug("One HEDEX submissions record found.");
                                 AssignmentSubmissions as = assignmentSubmissionss.get(0);
-                                String grade = submission.getGrade();
+                                final String grade = submission.getGrade();
+                                log.debug("GRADE: {}", grade);
                                 if (as.getFirstScore() == null) {
+                                    log.debug("This is the first grading");
+                                    // First time this submission has been graded
                                     as.setFirstScore(grade);
                                     as.setLastScore(grade);
                                     if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
@@ -196,9 +252,11 @@ public class HedexEventDigester implements Observer {
                                             as.setHighestScore(numericScore);
                                             as.setAverageScore((float)numericScore);
                                         } catch (NumberFormatException nfe) {
+                                            log.error("Failed to set scores on graded submission " + submissionId + " - NumberFormatException on " + grade);
                                         }
                                     }
                                 } else {
+                                    log.debug("This is not the first grading");
                                     as.setLastScore(grade);
                                     if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
                                         // This is a numeric grade, so we can do numeric stuff with it.
@@ -208,21 +266,25 @@ public class HedexEventDigester implements Observer {
                                             else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
                                             as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
                                         } catch (NumberFormatException nfe) {
+                                            log.error("Failed to set scores on graded submission " + submissionId + " - NumberFormatException on " + grade);
                                         }
                                     }
                                 }
                                 Transaction tx = session.beginTransaction();
-                                session.save(as);
+                                session.update(as);
                                 tx.commit();
-                            }
+                            } else {
+                                log.error("No submission for id: " + submissionId);
+							}
                         } catch (Exception e) {
                             log.error("Failed to in insert/update AssignmentSubmissions", e);
-                        }
+                        } finally {
+							securityService.popAdvisor(sa);
+						}
                     } else if (PresenceService.EVENT_PRESENCE.equals(eventName)) {
                         // Parse out the course id
                         String compoundId = reference.substring(reference.lastIndexOf("/") + 1);
                         String siteId = compoundId.substring(0, compoundId.indexOf(PRESENCE_SUFFIX));
-                        System.out.println("SITE ID: " + siteId);
 
                         if (siteId.startsWith("~")) {
                             // This is a user workspace
@@ -237,22 +299,48 @@ public class HedexEventDigester implements Observer {
 
                         CourseVisits courseVisits = null;
 
-                        if (courseVisitss.size() == 1) {
-                            courseVisits = courseVisitss.get(0);
-                            courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);
-                        } else {
+                        assert courseVisitss.size() <= 1;
+
+                        if (courseVisitss.size() <= 0) {
                             courseVisits = new CourseVisits();
                             courseVisits.setUserId(eventUserId);
                             courseVisits.setSiteId(siteId);
                             courseVisits.setNumVisits(1L);
+                        } else {
+                            courseVisits = courseVisitss.get(0);
+                            courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);
                         }
                         courseVisits.setLatestVisit(event.getEventTime());
                         Transaction tx = session.beginTransaction();
-                        session.save(courseVisits);
+                        session.saveOrUpdate(courseVisits);
                         tx.commit();
                     }
-                }
-            });
+                });
+            }
         }
+    }
+
+	/**
+     * Supply null to this and everything will be allowed. Supply
+     * a list of functions and only they will be allowed.
+     */
+    private SecurityAdvisor unlock(final String[] functions) {
+
+        SecurityAdvisor securityAdvisor = new SecurityAdvisor() {
+                public SecurityAdvice isAllowed(String userId, String function, String reference) {
+
+                    if (functions != null) {
+                        if (Arrays.asList(functions).contains(function)) {
+                            return SecurityAdvice.ALLOWED;
+                        } else {
+                            return SecurityAdvice.NOT_ALLOWED;
+                        }
+                    } else {
+                        return SecurityAdvice.ALLOWED;
+                    }
+                }
+            };
+        securityService.pushAdvisor(securityAdvisor);
+        return securityAdvisor;
     }
 }
