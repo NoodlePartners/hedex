@@ -238,41 +238,48 @@ public class HedexEventDigester implements Observer {
                                 final String grade = submission.getGrade();
                                 log.debug("GRADE: {}", grade);
                                 assert grade != null;
-                                AssignmentSubmissions as = assignmentSubmissionss.get(0);
-                                if (as.getFirstScore() == null) {
-                                    log.debug("This is the first grading");
-                                    // First time this submission has been graded
-                                    as.setFirstScore(grade);
-                                    as.setLastScore(grade);
-                                    if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
-                                        // This is a numeric grade, so we can do numeric stuff with it.
-                                        try {
-                                            int numericScore = Integer.parseInt(grade);
-                                            as.setLowestScore(numericScore);
-                                            as.setHighestScore(numericScore);
-                                            as.setAverageScore((float)numericScore);
-                                        } catch (NumberFormatException nfe) {
-                                            log.error("Failed to set scores on graded submission " + submissionId + " - NumberFormatException on " + grade);
+                                if (grade != null) {
+                                    AssignmentSubmissions as = assignmentSubmissionss.get(0);
+                                    if (as.getFirstScore() == null) {
+                                        log.debug("This is the first grading");
+                                        // First time this submission has been graded
+                                        as.setFirstScore(grade);
+                                        as.setLastScore(grade);
+                                        if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
+                                            // This is a numeric grade, so we can do numeric stuff with it.
+                                            try {
+                                                int numericScore = Integer.parseInt(grade);
+                                                as.setLowestScore(numericScore);
+                                                as.setHighestScore(numericScore);
+                                                as.setAverageScore((float)numericScore);
+                                            } catch (NumberFormatException nfe) {
+                                                log.error("Failed to set scores on graded submission "
+                                                            + submissionId + " - NumberFormatException on " + grade);
+                                            }
+                                        }
+                                    } else {
+                                        log.debug("This is not the first grading");
+                                        as.setLastScore(grade);
+                                        if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
+                                            // This is a numeric grade, so we can do numeric stuff with it.
+                                            try {
+                                                int numericScore = Integer.parseInt(grade);
+                                                if (numericScore < as.getLowestScore()) as.setLowestScore(numericScore);
+                                                else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
+                                                as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
+                                            } catch (NumberFormatException nfe) {
+                                                log.error("Failed to set scores on graded submission "
+                                                            + submissionId + " - NumberFormatException on " + grade);
+                                            }
                                         }
                                     }
+                                    Transaction tx = session.beginTransaction();
+                                    session.update(as);
+                                    tx.commit();
                                 } else {
-                                    log.debug("This is not the first grading");
-                                    as.setLastScore(grade);
-                                    if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
-                                        // This is a numeric grade, so we can do numeric stuff with it.
-                                        try {
-                                            int numericScore = Integer.parseInt(grade);
-                                            if (numericScore < as.getLowestScore()) as.setLowestScore(numericScore);
-                                            else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
-                                            as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
-                                        } catch (NumberFormatException nfe) {
-                                            log.error("Failed to set scores on graded submission " + submissionId + " - NumberFormatException on " + grade);
-                                        }
-                                    }
+                                    log.error("Null grade set on submission " + submissionId
+                                            + ". This is not right. We've had the event, we should have the grade.");
                                 }
-                                Transaction tx = session.beginTransaction();
-                                session.update(as);
-                                tx.commit();
                             } else {
                                 log.error("No submission for id: " + submissionId);
 							}
