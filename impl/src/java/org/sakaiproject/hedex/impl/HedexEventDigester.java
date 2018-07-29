@@ -69,7 +69,7 @@ public class HedexEventDigester implements Observer {
     
     public void init() {
 
-        log.debug("HedexEventDigester.init()");
+        log.debug("init()");
 
         if (serverConfigurationService.getBoolean("hedex.digester.enabled", true)) {
             eventTrackingService.addObserver(this);
@@ -82,7 +82,7 @@ public class HedexEventDigester implements Observer {
 
     public void destroy() {
 
-        log.debug("HedexEventDigester.destroy()");
+        log.debug("destroy()");
 
         if (executorService != null) {
             executorService.shutdown();
@@ -231,14 +231,14 @@ public class HedexEventDigester implements Observer {
 							assert assignment != null;
                             final Assignment.GradeType gradeType = assignment.getTypeOfGrade();
 
-                            final AssignmentSubmission submission = assignmentService.getSubmission(submissionId);
-							assert submission != null;
-
                             if (assignmentSubmissionss.size() == 1) {
                                 log.debug("One HEDEX submissions record found.");
-                                AssignmentSubmissions as = assignmentSubmissionss.get(0);
+                                final AssignmentSubmission submission = assignmentService.getSubmission(submissionId);
+                                assert submission != null;
                                 final String grade = submission.getGrade();
                                 log.debug("GRADE: {}", grade);
+                                assert grade != null;
+                                AssignmentSubmissions as = assignmentSubmissionss.get(0);
                                 if (as.getFirstScore() == null) {
                                     log.debug("This is the first grading");
                                     // First time this submission has been graded
