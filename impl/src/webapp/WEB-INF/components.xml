@@ -5,7 +5,7 @@
         http://www.springframework.org/schema/beans/spring-beans.xsd">
 
     <bean id="org.sakaiproject.hedex.impl.HedexEventDigester"
-        class="org.sakaiproject.hedex.impl.HedexEventDigester" init-method="init" destroy-method="destroy">
+        class="org.sakaiproject.hedex.impl.HedexEventDigester" init-method="init">
 		<property name="assignmentService" ref="org.sakaiproject.assignment.api.AssignmentService" />
 		<property name="eventTrackingService" ref="org.sakaiproject.event.api.EventTrackingService" />
 		<property name="securityService" ref="org.sakaiproject.authz.api.SecurityService" />

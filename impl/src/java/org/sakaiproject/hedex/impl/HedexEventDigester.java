@@ -1,15 +1,13 @@
 package org.sakaiproject.hedex.impl;
 
 import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.concurrent.Executors;
+/*import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeUnit;*/
 import java.util.Date;
 import java.util.List;
 import java.util.Observable;
 import java.util.Observer;
-import java.util.Set;
 
 import org.sakaiproject.assignment.api.AssignmentService;
 import org.sakaiproject.assignment.api.AssignmentConstants;
@@ -65,43 +63,14 @@ public class HedexEventDigester implements Observer {
     @Setter
     private AssignmentService assignmentService;
 
-    private ExecutorService executorService;
-    
     public void init() {
 
         log.debug("init()");
 
         if (serverConfigurationService.getBoolean("hedex.digester.enabled", true)) {
             eventTrackingService.addObserver(this);
-            int threadPoolSize = serverConfigurationService.getInt("hedex.digester.threadPoolSize", 20);
-            executorService = Executors.newFixedThreadPool(threadPoolSize);
         } else {
             log.info("HEDEX event digester not enabled on this server");
-        }
-    }
-
-    public void destroy() {
-
-        log.debug("destroy()");
-
-        if (executorService != null) {
-            executorService.shutdown();
-            try {
-                // Wait a while for existing tasks to terminate
-                if (!executorService.awaitTermination(20, TimeUnit.SECONDS)) {
-                    // We've waited 20 seconds. Cancel current tasks.
-                    executorService.shutdownNow();
-                    // Wait a while for tasks to respond to being cancelled
-                    if (!executorService.awaitTermination(20, TimeUnit.SECONDS)) {
-                       log.error("HEDEX executorService did not terminate within 20 seconds.");
-                    }
-                 }
-            } catch (InterruptedException ie) {
-                // (Re-)Cancel if current thread also interrupted
-                executorService.shutdownNow();
-                // Preserve interrupt status
-                Thread.currentThread().interrupt();
-            }
         }
     }
 
@@ -113,216 +82,202 @@ public class HedexEventDigester implements Observer {
             log.debug("Event '{}' ...", eventName);
             String eventUserId = event.getUserId();
             if (HANDLED_EVENTS.contains(eventName)  && !EventTrackingService.UNKNOWN_USER.equals(eventUserId)) {
-                try {
-                    sessionFactory.getCurrentSession().flush();
-                } catch (HibernateException he) {
-                    // This will be thrown if there is no current Hibernate session. Nothing to do.
-                }
 
-                executorService.execute(() -> {
+                log.debug("Handling event '{}' ...", eventName);
 
-                    log.debug("Handling event '{}' ...", eventName);
+                final String sessionId = event.getSessionId();
+                final String reference = event.getResource();
 
-                    final String sessionId = event.getSessionId();
-                    final String reference = event.getResource();
-
-                    if (UsageSessionService.EVENT_LOGIN.equals(eventName)) {
-                        try {
-                            SessionDuration sd = new SessionDuration();
-                            sd.setUserId(eventUserId);
-                            sd.setSessionId(sessionId);
-                            sd.setStartTime(event.getEventTime());
-                            Session session = sessionFactory.openSession();
+                if (UsageSessionService.EVENT_LOGIN.equals(eventName)) {
+                    try {
+                        SessionDuration sd = new SessionDuration();
+                        sd.setUserId(eventUserId);
+                        sd.setSessionId(sessionId);
+                        sd.setStartTime(event.getEventTime());
+                        Session session = sessionFactory.openSession();
+                        Transaction tx = session.beginTransaction();
+                        session.save(sd);
+                        tx.commit();
+                    } catch (Exception e) {
+                        log.error("Failed to in insert new SessionDuration", e);
+                    }
+                } else if (UsageSessionService.EVENT_LOGOUT.equals(eventName)) {
+                    try {
+                        Session session = sessionFactory.openSession();
+                        List<SessionDuration> sessionDurations = session.createCriteria(SessionDuration.class)
+                            .add(Restrictions.eq("sessionId", sessionId)).list();
+                        if (sessionDurations.size() == 1) {
+                            SessionDuration sd = sessionDurations.get(0);
+                            sd.setDuration(event.getEventTime().getTime() - sd.getStartTime().getTime());
                             Transaction tx = session.beginTransaction();
-                            session.save(sd);
+                            session.update(sd);
                             tx.commit();
-                        } catch (Exception e) {
-                            log.error("Failed to in insert new SessionDuration", e);
+                        } else {
+                            log.error("No SessionDuration for event sessionId: " + sessionId);
                         }
-                    } else if (UsageSessionService.EVENT_LOGOUT.equals(eventName)) {
-                        try {
-                            Session session = sessionFactory.openSession();
-                            List<SessionDuration> sessionDurations = session.createCriteria(SessionDuration.class)
-                                .add(Restrictions.eq("sessionId", sessionId)).list();
-                            if (sessionDurations.size() == 1) {
-                                SessionDuration sd = sessionDurations.get(0);
-                                sd.setDuration(event.getEventTime().getTime() - sd.getStartTime().getTime());
-                                Transaction tx = session.beginTransaction();
-                                session.update(sd);
-                                tx.commit();
-                            } else {
-                                log.error("No SessionDuration for event sessionId: " + sessionId);
-                            }
-                        } catch (Exception e) {
-                            log.error("Failed to in insert new SessionDuration", e);
-                        }
-                    } else if (AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION.equals(eventName)) {
-                        // We need to check for the fully formed submit event.
-                        if (reference.contains("/")) {
-                            AssignmentReferenceReckoner.AssignmentReference submissionReference
-                                = AssignmentReferenceReckoner.reckoner().reference(reference).reckon();
-                            String siteId = event.getContext();
-                            String assignmentId = submissionReference.getContainer();
-                            String submissionId = submissionReference.getId();
-                            try {
-                                Assignment assignment = assignmentService.getAssignment(assignmentId);
-
-                                Assignment.GradeType gradeType = assignment.getTypeOfGrade();
-                                // Lookup the current AssignmentSubmissions record. There should only
-                                // be <= 1 for this user and assignment.
-                                Session session = sessionFactory.openSession();
-                                List<AssignmentSubmissions> assignmentSubmissionss
-                                    = session.createCriteria(AssignmentSubmissions.class)
-                                        .add(Restrictions.eq("userId", eventUserId))
-                                        .add(Restrictions.eq("assignmentId", assignmentId))
-                                        .add(Restrictions.eq("submissionId", submissionId)).list();
-
-                                assert assignmentSubmissionss.size() <= 1;
-
-                                if (assignmentSubmissionss.size() <= 0) {
-                                    // No record yet. Create one.
-                                    AssignmentSubmissions as = new AssignmentSubmissions();
-                                    as.setUserId(eventUserId);
-                                    as.setAssignmentId(assignmentId);
-                                    as.setSubmissionId(submissionId);
-                                    as.setSiteId(siteId);
-                                    as.setTitle(assignment.getTitle());
-                                    as.setDueDate(Date.from(assignment.getDueDate()));
-                                    as.setNumSubmissions(1);
-
-                                    Transaction tx = session.beginTransaction();
-                                    session.save(as);
-                                    tx.commit();
-                                } else {
-                                    AssignmentSubmissions as = assignmentSubmissionss.get(0);
-                                    as.setNumSubmissions(as.getNumSubmissions() + 1);
-                                    Transaction tx = session.beginTransaction();
-                                    session.update(as);
-                                    tx.commit();
-                                }
-                            } catch (Exception e) {
-                                log.error("Failed to in insert/update AssignmentSubmissions", e);
-                            }
-                        }
-                    } else if (AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION.equals(eventName)) {
+                    } catch (Exception e) {
+                        log.error("Failed to in insert new SessionDuration", e);
+                    }
+                } else if (AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION.equals(eventName)) {
+                    // We need to check for the fully formed submit event.
+                    if (reference.contains("/")) {
                         AssignmentReferenceReckoner.AssignmentReference submissionReference
                             = AssignmentReferenceReckoner.reckoner().reference(reference).reckon();
-
-                        final String siteId = submissionReference.getContext();
-                        final String assignmentId = submissionReference.getContainer();
-                        final String submissionId = submissionReference.getId();
-
-						SecurityAdvisor sa = unlock(new String[] {AssignmentServiceConstants.SECURE_ACCESS_ASSIGNMENT_SUBMISSION
-														, AssignmentServiceConstants.SECURE_ACCESS_ASSIGNMENT
-														, AssignmentServiceConstants.SECURE_ADD_ASSIGNMENT_SUBMISSION});
-
+                        String siteId = event.getContext();
+                        String assignmentId = submissionReference.getContainer();
+                        String submissionId = submissionReference.getId();
                         try {
-                            Session session = sessionFactory.openSession();
-                            log.debug("Searching for record for assignment id {} and submission id {}"
-                                        , assignmentId, submissionId);
-                            final List<AssignmentSubmissions> assignmentSubmissionss
+                            Assignment assignment = assignmentService.getAssignment(assignmentId);
+
+                            Assignment.GradeType gradeType = assignment.getTypeOfGrade();
+                            // Lookup the current AssignmentSubmissions record. There should only
+                            // be <= 1 for this user and assignment.
+                            Session session = sessionFactory.getCurrentSession();
+                            List<AssignmentSubmissions> assignmentSubmissionss
                                 = session.createCriteria(AssignmentSubmissions.class)
+                                    .add(Restrictions.eq("userId", eventUserId))
                                     .add(Restrictions.eq("assignmentId", assignmentId))
                                     .add(Restrictions.eq("submissionId", submissionId)).list();
 
-                            assert assignmentSubmissionss.size() == 1;
+                            assert assignmentSubmissionss.size() <= 1;
 
-                            final Assignment assignment = assignmentService.getAssignment(assignmentId);
-							assert assignment != null;
-                            final Assignment.GradeType gradeType = assignment.getTypeOfGrade();
+                            if (assignmentSubmissionss.size() <= 0) {
+                                // No record yet. Create one.
+                                AssignmentSubmissions as = new AssignmentSubmissions();
+                                as.setUserId(eventUserId);
+                                as.setAssignmentId(assignmentId);
+                                as.setSubmissionId(submissionId);
+                                as.setSiteId(siteId);
+                                as.setTitle(assignment.getTitle());
+                                as.setDueDate(Date.from(assignment.getDueDate()));
+                                as.setNumSubmissions(1);
 
-                            if (assignmentSubmissionss.size() == 1) {
-                                log.debug("One HEDEX submissions record found.");
-                                final AssignmentSubmission submission = assignmentService.getSubmission(submissionId);
-                                assert submission != null;
-                                final String grade = submission.getGrade();
-                                log.debug("GRADE: {}", grade);
-                                assert grade != null;
-                                if (grade != null) {
-                                    AssignmentSubmissions as = assignmentSubmissionss.get(0);
-                                    if (as.getFirstScore() == null) {
-                                        log.debug("This is the first grading");
-                                        // First time this submission has been graded
-                                        as.setFirstScore(grade);
-                                        as.setLastScore(grade);
-                                        if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
-                                            // This is a numeric grade, so we can do numeric stuff with it.
-                                            try {
-                                                int numericScore = Integer.parseInt(grade);
-                                                as.setLowestScore(numericScore);
-                                                as.setHighestScore(numericScore);
-                                                as.setAverageScore((float)numericScore);
-                                            } catch (NumberFormatException nfe) {
-                                                log.error("Failed to set scores on graded submission "
-                                                            + submissionId + " - NumberFormatException on " + grade);
-                                            }
-                                        }
-                                    } else {
-                                        log.debug("This is not the first grading");
-                                        as.setLastScore(grade);
-                                        if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
-                                            // This is a numeric grade, so we can do numeric stuff with it.
-                                            try {
-                                                int numericScore = Integer.parseInt(grade);
-                                                if (numericScore < as.getLowestScore()) as.setLowestScore(numericScore);
-                                                else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
-                                                as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
-                                            } catch (NumberFormatException nfe) {
-                                                log.error("Failed to set scores on graded submission "
-                                                            + submissionId + " - NumberFormatException on " + grade);
-                                            }
-                                        }
-                                    }
-                                    Transaction tx = session.beginTransaction();
-                                    session.update(as);
-                                    tx.commit();
-                                } else {
-                                    log.error("Null grade set on submission " + submissionId
-                                            + ". This is not right. We've had the event, we should have the grade.");
-                                }
+                                session.persist(as);
                             } else {
-                                log.error("No submission for id: " + submissionId);
-							}
+                                AssignmentSubmissions as = assignmentSubmissionss.get(0);
+                                as.setNumSubmissions(as.getNumSubmissions() + 1);
+                                session.update(as);
+                            }
                         } catch (Exception e) {
                             log.error("Failed to in insert/update AssignmentSubmissions", e);
-                        } finally {
-							securityService.popAdvisor(sa);
-						}
-                    } else if (PresenceService.EVENT_PRESENCE.equals(eventName)) {
-                        // Parse out the course id
-                        String compoundId = reference.substring(reference.lastIndexOf("/") + 1);
-                        String siteId = compoundId.substring(0, compoundId.indexOf(PRESENCE_SUFFIX));
-
-                        if (siteId.startsWith("~")) {
-                            // This is a user workspace
-                            return;
                         }
-
-                        Session session = sessionFactory.openSession();
-
-                        List<CourseVisits> courseVisitss = session.createCriteria(CourseVisits.class)
-                            .add(Restrictions.eq("userId", eventUserId))
-                            .add(Restrictions.eq("siteId", siteId)).list();
-
-                        CourseVisits courseVisits = null;
-
-                        assert courseVisitss.size() <= 1;
-
-                        if (courseVisitss.size() <= 0) {
-                            courseVisits = new CourseVisits();
-                            courseVisits.setUserId(eventUserId);
-                            courseVisits.setSiteId(siteId);
-                            courseVisits.setNumVisits(1L);
-                        } else {
-                            courseVisits = courseVisitss.get(0);
-                            courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);
-                        }
-                        courseVisits.setLatestVisit(event.getEventTime());
-                        Transaction tx = session.beginTransaction();
-                        session.saveOrUpdate(courseVisits);
-                        tx.commit();
                     }
-                });
+                } else if (AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION.equals(eventName)) {
+                    AssignmentReferenceReckoner.AssignmentReference submissionReference
+                        = AssignmentReferenceReckoner.reckoner().reference(reference).reckon();
+
+                    final String siteId = submissionReference.getContext();
+                    final String assignmentId = submissionReference.getContainer();
+                    final String submissionId = submissionReference.getId();
+
+                    SecurityAdvisor sa = unlock(new String[] {AssignmentServiceConstants.SECURE_ACCESS_ASSIGNMENT_SUBMISSION
+                                                    , AssignmentServiceConstants.SECURE_ACCESS_ASSIGNMENT
+                                                    , AssignmentServiceConstants.SECURE_ADD_ASSIGNMENT_SUBMISSION});
+
+                    try {
+                        Session session = sessionFactory.getCurrentSession();
+                        log.debug("Searching for record for assignment id {} and submission id {}"
+                                    , assignmentId, submissionId);
+                        final List<AssignmentSubmissions> assignmentSubmissionss
+                            = session.createCriteria(AssignmentSubmissions.class)
+                                .add(Restrictions.eq("assignmentId", assignmentId))
+                                .add(Restrictions.eq("submissionId", submissionId)).list();
+
+                        assert assignmentSubmissionss.size() == 1;
+
+                        final Assignment assignment = assignmentService.getAssignment(assignmentId);
+                        assert assignment != null;
+                        final Assignment.GradeType gradeType = assignment.getTypeOfGrade();
+
+                        if (assignmentSubmissionss.size() == 1) {
+                            log.debug("One HEDEX submissions record found.");
+                            final AssignmentSubmission submission = assignmentService.getSubmission(submissionId);
+                            assert submission != null;
+                            final String grade = submission.getGrade();
+                            log.debug("GRADE: {}", grade);
+                            assert grade != null;
+                            if (grade != null) {
+                                AssignmentSubmissions as = assignmentSubmissionss.get(0);
+                                if (as.getFirstScore() == null) {
+                                    log.debug("This is the first grading");
+                                    // First time this submission has been graded
+                                    as.setFirstScore(grade);
+                                    as.setLastScore(grade);
+                                    if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
+                                        // This is a numeric grade, so we can do numeric stuff with it.
+                                        try {
+                                            int numericScore = Integer.parseInt(grade);
+                                            as.setLowestScore(numericScore);
+                                            as.setHighestScore(numericScore);
+                                            as.setAverageScore((float)numericScore);
+                                        } catch (NumberFormatException nfe) {
+                                            log.error("Failed to set scores on graded submission "
+                                                        + submissionId + " - NumberFormatException on " + grade);
+                                        }
+                                    }
+                                } else {
+                                    log.debug("This is not the first grading");
+                                    as.setLastScore(grade);
+                                    if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
+                                        // This is a numeric grade, so we can do numeric stuff with it.
+                                        try {
+                                            int numericScore = Integer.parseInt(grade);
+                                            if (numericScore < as.getLowestScore()) as.setLowestScore(numericScore);
+                                            else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
+                                            as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
+                                        } catch (NumberFormatException nfe) {
+                                            log.error("Failed to set scores on graded submission "
+                                                        + submissionId + " - NumberFormatException on " + grade);
+                                        }
+                                    }
+                                }
+                                session.update(as);
+                            } else {
+                                log.error("Null grade set on submission " + submissionId
+                                        + ". This is not right. We've had the event, we should have the grade.");
+                            }
+                        } else {
+                            log.error("No submission for id: " + submissionId);
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to in insert/update AssignmentSubmissions", e);
+                    } finally {
+                        securityService.popAdvisor(sa);
+                    }
+                } else if (PresenceService.EVENT_PRESENCE.equals(eventName)) {
+                    // Parse out the course id
+                    String compoundId = reference.substring(reference.lastIndexOf("/") + 1);
+                    String siteId = compoundId.substring(0, compoundId.indexOf(PRESENCE_SUFFIX));
+
+                    if (siteId.startsWith("~")) {
+                        // This is a user workspace
+                        return;
+                    }
+
+                    Session session = sessionFactory.openSession();
+
+                    List<CourseVisits> courseVisitss = session.createCriteria(CourseVisits.class)
+                        .add(Restrictions.eq("userId", eventUserId))
+                        .add(Restrictions.eq("siteId", siteId)).list();
+
+                    CourseVisits courseVisits = null;
+
+                    assert courseVisitss.size() <= 1;
+
+                    if (courseVisitss.size() <= 0) {
+                        courseVisits = new CourseVisits();
+                        courseVisits.setUserId(eventUserId);
+                        courseVisits.setSiteId(siteId);
+                        courseVisits.setNumVisits(1L);
+                    } else {
+                        courseVisits = courseVisitss.get(0);
+                        courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);
+                    }
+                    courseVisits.setLatestVisit(event.getEventTime());
+                    Transaction tx = session.beginTransaction();
+                    session.saveOrUpdate(courseVisits);
+                    tx.commit();
+                }
             }
         }
     }
