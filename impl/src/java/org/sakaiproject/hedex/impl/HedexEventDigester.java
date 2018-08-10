@@ -1,9 +1,6 @@
 package org.sakaiproject.hedex.impl;
 
 import java.util.Arrays;
-/*import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;*/
 import java.util.Date;
 import java.util.List;
 import java.util.Observable;
@@ -32,6 +29,10 @@ import org.hibernate.criterion.Restrictions;
 import org.sakaiproject.hedex.api.model.AssignmentSubmissions;
 import org.sakaiproject.hedex.api.model.CourseVisits;
 import org.sakaiproject.hedex.api.model.SessionDuration;
+
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallbackWithoutResult;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -63,6 +64,9 @@ public class HedexEventDigester implements Observer {
     @Setter
     private AssignmentService assignmentService;
 
+    @Setter
+    private TransactionTemplate transactionTemplate;;
+
     public void init() {
 
         log.debug("init()");
@@ -89,35 +93,34 @@ public class HedexEventDigester implements Observer {
                 final String reference = event.getResource();
 
                 if (UsageSessionService.EVENT_LOGIN.equals(eventName)) {
-                    try {
-                        SessionDuration sd = new SessionDuration();
-                        sd.setUserId(eventUserId);
-                        sd.setSessionId(sessionId);
-                        sd.setStartTime(event.getEventTime());
-                        Session session = sessionFactory.openSession();
-                        Transaction tx = session.beginTransaction();
-                        session.save(sd);
-                        tx.commit();
-                    } catch (Exception e) {
-                        log.error("Failed to in insert new SessionDuration", e);
-                    }
-                } else if (UsageSessionService.EVENT_LOGOUT.equals(eventName)) {
-                    try {
-                        Session session = sessionFactory.openSession();
-                        List<SessionDuration> sessionDurations = session.createCriteria(SessionDuration.class)
-                            .add(Restrictions.eq("sessionId", sessionId)).list();
-                        if (sessionDurations.size() == 1) {
-                            SessionDuration sd = sessionDurations.get(0);
-                            sd.setDuration(event.getEventTime().getTime() - sd.getStartTime().getTime());
-                            Transaction tx = session.beginTransaction();
-                            session.update(sd);
-                            tx.commit();
-                        } else {
-                            log.error("No SessionDuration for event sessionId: " + sessionId);
+                    transactionTemplate.execute(new TransactionCallbackWithoutResult() {
+
+                        protected void doInTransactionWithoutResult(TransactionStatus status) {
+
+                            SessionDuration sd = new SessionDuration();
+                            sd.setUserId(eventUserId);
+                            sd.setSessionId(sessionId);
+                            sd.setStartTime(event.getEventTime());
+                            sessionFactory.getCurrentSession().persist(sd);
                         }
-                    } catch (Exception e) {
-                        log.error("Failed to in insert new SessionDuration", e);
-                    }
+                    });
+                } else if (UsageSessionService.EVENT_LOGOUT.equals(eventName)) {
+                    transactionTemplate.execute(new TransactionCallbackWithoutResult() {
+
+                        protected void doInTransactionWithoutResult(TransactionStatus status) {
+
+                            List<SessionDuration> sessionDurations
+                                = sessionFactory.getCurrentSession().createCriteria(SessionDuration.class)
+                                    .add(Restrictions.eq("sessionId", sessionId)).list();
+                            if (sessionDurations.size() == 1) {
+                                SessionDuration sd = sessionDurations.get(0);
+                                sd.setDuration(event.getEventTime().getTime() - sd.getStartTime().getTime());
+                                sessionFactory.getCurrentSession().save(sd);
+                            } else {
+                                log.error("No SessionDuration for event sessionId: " + sessionId);
+                            }
+                        }
+                    });
                 } else if (AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION.equals(eventName)) {
                     // We need to check for the fully formed submit event.
                     if (reference.contains("/")) {
@@ -254,35 +257,38 @@ public class HedexEventDigester implements Observer {
                         return;
                     }
 
-                    Session session = sessionFactory.openSession();
+                    transactionTemplate.execute(new TransactionCallbackWithoutResult() {
 
-                    List<CourseVisits> courseVisitss = session.createCriteria(CourseVisits.class)
-                        .add(Restrictions.eq("userId", eventUserId))
-                        .add(Restrictions.eq("siteId", siteId)).list();
+                        protected void doInTransactionWithoutResult(TransactionStatus status) {
 
-                    CourseVisits courseVisits = null;
+                            List<CourseVisits> courseVisitss
+                                = sessionFactory.getCurrentSession().createCriteria(CourseVisits.class)
+                                    .add(Restrictions.eq("userId", eventUserId))
+                                    .add(Restrictions.eq("siteId", siteId)).list();
 
-                    assert courseVisitss.size() <= 1;
+                            CourseVisits courseVisits = null;
 
-                    if (courseVisitss.size() <= 0) {
-                        courseVisits = new CourseVisits();
-                        courseVisits.setUserId(eventUserId);
-                        courseVisits.setSiteId(siteId);
-                        courseVisits.setNumVisits(1L);
-                    } else {
-                        courseVisits = courseVisitss.get(0);
-                        courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);
-                    }
-                    courseVisits.setLatestVisit(event.getEventTime());
-                    Transaction tx = session.beginTransaction();
-                    session.saveOrUpdate(courseVisits);
-                    tx.commit();
+                            assert courseVisitss.size() <= 1;
+
+                            if (courseVisitss.size() <= 0) {
+                                courseVisits = new CourseVisits();
+                                courseVisits.setUserId(eventUserId);
+                                courseVisits.setSiteId(siteId);
+                                courseVisits.setNumVisits(1L);
+                            } else {
+                                courseVisits = courseVisitss.get(0);
+                                courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);
+                            }
+                            courseVisits.setLatestVisit(event.getEventTime());
+                            sessionFactory.getCurrentSession().saveOrUpdate(courseVisits);
+                        }
+                    });
                 }
             }
         }
     }
 
-	/**
+    /**
      * Supply null to this and everything will be allowed. Supply
      * a list of functions and only they will be allowed.
      */

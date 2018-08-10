@@ -95,61 +95,61 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
         String lastRunDate = (String) params.get(LAST_RUN_DATE);
         String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
 
+        Session session = sessionFactory.openSession();
         try {
-            Session session = sessionFactory.openSession();
             Criteria criteria = session.createCriteria(SessionDuration.class);
             if (startDate != null) {
                 criteria.add(Restrictions.ge("startTime", startDate));
             }
             List<SessionDuration> sessionDurations = criteria.list();
-            //if (sessionDurations.size() > 0) {
-                EngagementActivityRecords eaRecords = new EngagementActivityRecords();
-                eaRecords.setTenantId(tenantId);
-                List<EngagementActivityRecord> engagementActivity = new ArrayList<>();
-                Map<String, Long> totalTimes = new HashMap<>();
-                Map<String, Integer> totalLogins = new HashMap<>();
-                Map<String, Long> lastAccesses = new HashMap<>();
-                Map<String, EngagementActivityRecord> records = new HashMap<>();
-                for (SessionDuration sd : sessionDurations) {
-                    String personLmsId = sd.getUserId();
-                    if (!totalTimes.containsKey(personLmsId)) {
-                        totalTimes.put(personLmsId, 0L);
-                    }
-                    Long duration = sd.getDuration();
-                    if (duration != null) {
-                        totalTimes.put(personLmsId, totalTimes.get(personLmsId) + duration);
-                    }
-                    if (!totalLogins.containsKey(personLmsId)) {
-                        totalLogins.put(personLmsId, 0);
-                    }
-                    totalLogins.put(personLmsId, totalLogins.get(personLmsId) + 1);
-                    if (!lastAccesses.containsKey(personLmsId)) {
-                        lastAccesses.put(personLmsId, 0L);
-                    }
-                    long storedAccessTime = lastAccesses.get(personLmsId);
-                    long sessionStartTime = sd.getStartTime().getTime();
-                    if (sessionStartTime > storedAccessTime) {
-                        lastAccesses.put(personLmsId, sessionStartTime);
-                    }
-                    if (!records.containsKey(personLmsId)) {
-                        EngagementActivityRecord record = new EngagementActivityRecord();
-                        record.setPersonLmsId(personLmsId);
-                        records.put(personLmsId, record);
-                    }
+            EngagementActivityRecords eaRecords = new EngagementActivityRecords();
+            eaRecords.setTenantId(tenantId);
+            List<EngagementActivityRecord> engagementActivity = new ArrayList<>();
+            Map<String, Long> totalTimes = new HashMap<>();
+            Map<String, Integer> totalLogins = new HashMap<>();
+            Map<String, Long> lastAccesses = new HashMap<>();
+            Map<String, EngagementActivityRecord> records = new HashMap<>();
+            for (SessionDuration sd : sessionDurations) {
+                String personLmsId = sd.getUserId();
+                if (!totalTimes.containsKey(personLmsId)) {
+                    totalTimes.put(personLmsId, 0L);
                 }
+                Long duration = sd.getDuration();
+                if (duration != null) {
+                    totalTimes.put(personLmsId, totalTimes.get(personLmsId) + duration);
+                }
+                if (!totalLogins.containsKey(personLmsId)) {
+                    totalLogins.put(personLmsId, 0);
+                }
+                totalLogins.put(personLmsId, totalLogins.get(personLmsId) + 1);
+                if (!lastAccesses.containsKey(personLmsId)) {
+                    lastAccesses.put(personLmsId, 0L);
+                }
+                long storedAccessTime = lastAccesses.get(personLmsId);
+                long sessionStartTime = sd.getStartTime().getTime();
+                if (sessionStartTime > storedAccessTime) {
+                    lastAccesses.put(personLmsId, sessionStartTime);
+                }
+                if (!records.containsKey(personLmsId)) {
+                    EngagementActivityRecord record = new EngagementActivityRecord();
+                    record.setPersonLmsId(personLmsId);
+                    records.put(personLmsId, record);
+                }
+            }
 
-                records.forEach((personLmsId,record) -> {
-                    record.setLmsTotalTime(totalTimes.get(personLmsId));
-                    record.setLmsTotalLogin(totalLogins.get(personLmsId));
-                    record.setLmsLastAccessDate(lastAccesses.get(personLmsId));
-                });
+            records.forEach((personLmsId,record) -> {
+                record.setLmsTotalTime(totalTimes.get(personLmsId));
+                record.setLmsTotalLogin(totalLogins.get(personLmsId));
+                record.setLmsLastAccessDate(lastAccesses.get(personLmsId));
+            });
 
-                eaRecords.setEngagementActivity(new ArrayList<>(records.values()));
-                String json = objectMapper.writeValueAsString(eaRecords);
-                return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
-            //}
+            eaRecords.setEngagementActivity(new ArrayList<>(records.values()));
+            String json = objectMapper.writeValueAsString(eaRecords);
+            return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
         } catch (Exception e) {
             log.error("Failed to get sessions.", e);
+        } finally {
+            session.close();
         }
 
         return null;
@@ -166,8 +166,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
         String lastRunDate = (String) params.get(LAST_RUN_DATE);
         String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
 
+        Session session = sessionFactory.openSession();
         try {
-            Session session = sessionFactory.openSession();
             Criteria criteria = session.createCriteria(AssignmentSubmissions.class);
             if (startDate != null) {
                 criteria.add(Restrictions.gt("dueDate", startDate));
@@ -198,6 +198,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
             return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
         } catch (Exception e) {
             log.error("Failed to serialise to JSON", e);
+        } finally {
+            session.close();
         }
         return null;
     }
@@ -213,8 +215,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
         String lastRunDate = (String) params.get(LAST_RUN_DATE);
         String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
 
+        Session session = sessionFactory.openSession();
         try {
-            Session session = sessionFactory.openSession();
             Criteria criteria = session.createCriteria(CourseVisits.class);
             if (startDate != null) {
                 criteria.add(Restrictions.gt("latestVisit", startDate));
@@ -238,6 +240,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
             return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
         } catch (Exception e) {
             log.error("Failed to serialise to JSON", e);
+        } finally {
+            session.close();
         }
         return null;
     }
