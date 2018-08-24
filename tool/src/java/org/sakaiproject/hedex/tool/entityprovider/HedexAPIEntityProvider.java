@@ -20,6 +20,7 @@ import org.sakaiproject.entitybroker.EntityView;
 import org.sakaiproject.entitybroker.entityprovider.annotations.EntityCustomAction;
 import org.sakaiproject.entitybroker.entityprovider.capabilities.ActionsExecutable;
 import org.sakaiproject.entitybroker.entityprovider.capabilities.AutoRegisterEntityProvider;
+import org.sakaiproject.entitybroker.entityprovider.capabilities.Describeable;
 import org.sakaiproject.entitybroker.entityprovider.extension.ActionReturn;
 import org.sakaiproject.entitybroker.entityprovider.extension.Formats;
 import org.sakaiproject.entitybroker.exception.EntityException;
@@ -50,7 +51,7 @@ import lombok.extern.slf4j.Slf4j;
 @Setter
 @Slf4j
 public class HedexAPIEntityProvider extends AbstractEntityProvider
-    implements AutoRegisterEntityProvider, ActionsExecutable {
+    implements AutoRegisterEntityProvider, ActionsExecutable, Describeable {
 
     private final static String REQUESTING_AGENT = "RequestingAgent";
     private final static String TERMS = "terms";
@@ -81,7 +82,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 	 */
 	@Override
 	public String getEntityPrefix() {
-		return "hedex-api";
+		return "hedex";
 	}
 
 	@EntityCustomAction(action = "Get_Retention_Engagement_EngagementActivity", viewKey = EntityView.VIEW_LIST)
@@ -256,8 +257,11 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         org.sakaiproject.tool.api.Session session = sessionManager.getSession(sessionId);
 
+        System.out.println(sessionId);
+        System.out.println(session);
+
         if (session == null || !session.getUserEid().equals(hedexUserId)) {
-            throw new EntityException("You must be logged as the hedex user.", reference.getReference());
+            throw new EntityException("You must be logged in as the hedex user.", reference.getReference());
         }
     }
 
