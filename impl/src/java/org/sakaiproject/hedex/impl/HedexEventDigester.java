@@ -72,7 +72,7 @@ public class HedexEventDigester implements Observer {
         log.debug("init()");
 
         if (serverConfigurationService.getBoolean("hedex.digester.enabled", true)) {
-            eventTrackingService.addObserver(this);
+            eventTrackingService.addLocalObserver(this);
         } else {
             log.info("HEDEX event digester not enabled on this server");
         }
