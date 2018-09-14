@@ -63,4 +63,7 @@ public class AssignmentSubmissions {
 
     @Column(name = "HIGHEST_SCORE")
     private Integer highestScore;
+
+    @Column(name = "AGENT", nullable = false)
+    private String agent;
 }

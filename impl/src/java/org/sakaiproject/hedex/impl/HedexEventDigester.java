@@ -1,10 +1,18 @@
 package org.sakaiproject.hedex.impl;
 
 import java.util.Arrays;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Observable;
 import java.util.Observer;
+
+import org.apache.commons.lang3.StringUtils;
 
 import org.sakaiproject.assignment.api.AssignmentService;
 import org.sakaiproject.assignment.api.AssignmentConstants;
@@ -12,6 +20,7 @@ import org.sakaiproject.assignment.api.AssignmentServiceConstants;
 import org.sakaiproject.assignment.api.AssignmentReferenceReckoner;
 import org.sakaiproject.assignment.api.model.Assignment;
 import org.sakaiproject.assignment.api.model.AssignmentSubmission;
+import org.sakaiproject.authz.api.Member;
 import org.sakaiproject.authz.api.SecurityAdvisor;
 import org.sakaiproject.authz.api.SecurityService;
 import org.sakaiproject.component.api.ServerConfigurationService;
@@ -19,6 +28,10 @@ import org.sakaiproject.event.api.Event;
 import org.sakaiproject.event.api.EventTrackingService;
 import org.sakaiproject.event.api.UsageSessionService;
 import org.sakaiproject.presence.api.PresenceService;
+import org.sakaiproject.site.api.Site;
+import org.sakaiproject.site.api.SiteService;
+import org.sakaiproject.site.api.SiteService.SelectionType;
+import org.sakaiproject.site.api.SiteService.SortType;
 
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
@@ -65,7 +78,15 @@ public class HedexEventDigester implements Observer {
     private AssignmentService assignmentService;
 
     @Setter
-    private TransactionTemplate transactionTemplate;;
+    private SiteService siteService;
+
+    @Setter
+    private TransactionTemplate transactionTemplate;
+
+    private Map<String, String> siteAgents = new ConcurrentHashMap<>();
+    private Map<String, String> memberAgents = new ConcurrentHashMap<>();
+
+    private ScheduledExecutorService siteIdRefresher;
 
     public void init() {
 
@@ -73,9 +94,58 @@ public class HedexEventDigester implements Observer {
 
         if (serverConfigurationService.getBoolean("hedex.digester.enabled", true)) {
             eventTrackingService.addLocalObserver(this);
+
+            // Load the map with the agent keyed list of sites
+            String hedexAgentProperty = serverConfigurationService.getString("hedex.agent.property", "hedex-agent");
+            log.debug("hedex.agent.property: {}", hedexAgentProperty);
+            int hedexSiteUpdateInterval = serverConfigurationService.getInt("hedex.site.update.interval", 30);
+            log.debug("hedex.site.update.interval: {}", hedexSiteUpdateInterval);
+
+            Map<String, String> desiredProps = new HashMap<>();
+            desiredProps.put(hedexAgentProperty , "");
+            siteIdRefresher = Executors.newSingleThreadScheduledExecutor();
+            siteIdRefresher.scheduleAtFixedRate(() -> {
+                    log.debug("Refreshing agent caches ...");
+                    siteAgents.clear();
+                    memberAgents.clear();
+                    List<Site> hedexSites
+                        = siteService.getSites(SelectionType.ANY, null, null, desiredProps, SortType.NONE, null, false);
+                    for (Site hedexSite : hedexSites) {
+                        String agent = hedexSite.getProperties().getProperty(hedexAgentProperty);
+                        siteAgents.put(hedexSite.getId(), agent);
+                        for (Member member : hedexSite.getMembers()) {
+                            memberAgents.put(member.getUserId(), agent);
+                        }
+                    }
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Site Agents:");
+                        siteAgents.keySet().forEach(k -> { log.debug("\t{}:{}", k, siteAgents.get(k)); });
+                        log.debug("Member Agents:");
+                        memberAgents.keySet().forEach(k -> { log.debug("\t{}:{}", k, memberAgents.get(k)); });
+                    }
+                }, 0, hedexSiteUpdateInterval, TimeUnit.MINUTES);
         } else {
             log.info("HEDEX event digester not enabled on this server");
         }
+    }
+
+    public void destroy() {
+
+		if (siteIdRefresher != null) {
+			siteIdRefresher.shutdown(); // Disable new tasks from being submitted
+			try {
+				if (!siteIdRefresher.awaitTermination(60, TimeUnit.SECONDS)) {
+					siteIdRefresher.shutdownNow(); // Cancel currently executing tasks
+			   		if (!siteIdRefresher.awaitTermination(60, TimeUnit.SECONDS)) {
+				   		log.error("siteIdRefresher did not terminate");
+					}
+		        }
+			} catch (InterruptedException ie) {
+			    siteIdRefresher.shutdownNow();
+			    Thread.currentThread().interrupt();
+			}
+		}
     }
 
     public void update(Observable o, final Object arg) {
@@ -84,7 +154,17 @@ public class HedexEventDigester implements Observer {
             Event event = (Event) arg;
             String eventName = event.getEvent();
             log.debug("Event '{}' ...", eventName);
-            String eventUserId = event.getUserId();
+
+            String testSiteId = event.getContext();
+            if (testSiteId == null) testSiteId = "";
+            final String siteAgent = siteAgents.get(testSiteId);
+
+            String testEventUserId = event.getUserId();
+            if (testEventUserId == null) testEventUserId = "";
+            final String memberAgent = memberAgents.get(testEventUserId);
+
+            final String eventUserId = event.getUserId();
+
             if (HANDLED_EVENTS.contains(eventName)  && !EventTrackingService.UNKNOWN_USER.equals(eventUserId)) {
 
                 log.debug("Handling event '{}' ...", eventName);
@@ -92,7 +172,7 @@ public class HedexEventDigester implements Observer {
                 final String sessionId = event.getSessionId();
                 final String reference = event.getResource();
 
-                if (UsageSessionService.EVENT_LOGIN.equals(eventName)) {
+                if (UsageSessionService.EVENT_LOGIN.equals(eventName) && memberAgent != null) {
                     transactionTemplate.execute(new TransactionCallbackWithoutResult() {
 
                         protected void doInTransactionWithoutResult(TransactionStatus status) {
@@ -101,10 +181,11 @@ public class HedexEventDigester implements Observer {
                             sd.setUserId(eventUserId);
                             sd.setSessionId(sessionId);
                             sd.setStartTime(event.getEventTime());
+                            sd.setAgent(memberAgent);
                             sessionFactory.getCurrentSession().persist(sd);
                         }
                     });
-                } else if (UsageSessionService.EVENT_LOGOUT.equals(eventName)) {
+                } else if (UsageSessionService.EVENT_LOGOUT.equals(eventName) && memberAgent != null) {
                     transactionTemplate.execute(new TransactionCallbackWithoutResult() {
 
                         protected void doInTransactionWithoutResult(TransactionStatus status) {
@@ -121,7 +202,7 @@ public class HedexEventDigester implements Observer {
                             }
                         }
                     });
-                } else if (AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION.equals(eventName)) {
+                } else if (AssignmentConstants.EVENT_SUBMIT_ASSIGNMENT_SUBMISSION.equals(eventName) && siteAgent != null) {
                     // We need to check for the fully formed submit event.
                     if (reference.contains("/")) {
                         AssignmentReferenceReckoner.AssignmentReference submissionReference
@@ -154,6 +235,7 @@ public class HedexEventDigester implements Observer {
                                 as.setTitle(assignment.getTitle());
                                 as.setDueDate(Date.from(assignment.getDueDate()));
                                 as.setNumSubmissions(1);
+                                as.setAgent(siteAgent);
 
                                 session.persist(as);
                             } else {
@@ -165,7 +247,7 @@ public class HedexEventDigester implements Observer {
                             log.error("Failed to in insert/update AssignmentSubmissions", e);
                         }
                     }
-                } else if (AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION.equals(eventName)) {
+                } else if (AssignmentConstants.EVENT_GRADE_ASSIGNMENT_SUBMISSION.equals(eventName) && siteAgent != null) {
                     AssignmentReferenceReckoner.AssignmentReference submissionReference
                         = AssignmentReferenceReckoner.reckoner().reference(reference).reckon();
 
@@ -257,6 +339,12 @@ public class HedexEventDigester implements Observer {
                         return;
                     }
 
+                    String presenceSiteAgent = siteAgents.get(siteId);
+                    if (presenceSiteAgent == null) {
+                        // Not an agent site
+                        return;
+                    }
+
                     transactionTemplate.execute(new TransactionCallbackWithoutResult() {
 
                         protected void doInTransactionWithoutResult(TransactionStatus status) {
@@ -275,6 +363,7 @@ public class HedexEventDigester implements Observer {
                                 courseVisits.setUserId(eventUserId);
                                 courseVisits.setSiteId(siteId);
                                 courseVisits.setNumVisits(1L);
+                                courseVisits.setAgent(presenceSiteAgent);
                             } else {
                                 courseVisits = courseVisitss.get(0);
                                 courseVisits.setNumVisits(courseVisits.getNumVisits() + 1L);

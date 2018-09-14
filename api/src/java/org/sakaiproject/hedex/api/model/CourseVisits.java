@@ -38,4 +38,7 @@ public class CourseVisits {
     @Column(name = "LATEST_VISIT", columnDefinition="DATETIME", nullable = false)
     @Temporal(TemporalType.TIMESTAMP)
     private Date latestVisit;
+
+    @Column(name = "AGENT", nullable = false)
+    private String agent;
 }

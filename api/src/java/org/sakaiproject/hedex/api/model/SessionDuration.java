@@ -36,4 +36,7 @@ public class SessionDuration {
 
     @Column(name = "DURATION")
     private Long duration;
+
+    @Column(name = "AGENT", nullable = false)
+    private String agent;
 }

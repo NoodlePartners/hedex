@@ -60,7 +60,6 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
     private final static String LAST_RUN_DATE = "lastRunDate";
     private final static String INCLUDE_ALL_TERM_HISTORY = "lastRunDate";
 
-    private String hedexUserId;
     private String tenantId;
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -74,7 +73,6 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
     public void init() {
 
         tenantId = serverConfigurationService.getString("hedex.tenantId", "UNSPECIFIED");
-        hedexUserId = serverConfigurationService.getString("hedex.userId", "hedex-api-user");
     }
 
 	/**
@@ -88,8 +86,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 	@EntityCustomAction(action = "Get_Retention_Engagement_EngagementActivity", viewKey = EntityView.VIEW_LIST)
 	public ActionReturn getEngagementActivity(EntityReference reference, Map<String, Object> params) {
 
-        checkSession(reference, params);
         String requestingAgent = getCheckedRequestingAgent(params, reference);
+        checkSession(reference, params, requestingAgent);
         final String[] terms = getTerms(params);
         Date startDate = getValidatedDate((String) params.get(START_DATE));
         String sendChangesOnly = (String) params.get(SEND_CHANGES_ONLY);
@@ -98,7 +96,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         Session session = sessionFactory.openSession();
         try {
-            Criteria criteria = session.createCriteria(SessionDuration.class);
+            Criteria criteria = session.createCriteria(SessionDuration.class)
+                .add(Restrictions.eq("agent", requestingAgent));
             if (startDate != null) {
                 criteria.add(Restrictions.ge("startTime", startDate));
             }
@@ -159,8 +158,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 	@EntityCustomAction(action = "Get_Retention_Engagement_Assignments", viewKey = EntityView.VIEW_LIST)
 	public ActionReturn getAssignments(EntityReference reference, Map<String, Object> params) {
 
-        checkSession(reference, params);
         String requestingAgent = getCheckedRequestingAgent(params, reference);
+        checkSession(reference, params, requestingAgent);
         final String[] terms = getTerms(params);
         Date startDate = getValidatedDate((String) params.get(START_DATE));
         String sendChangesOnly = (String) params.get(SEND_CHANGES_ONLY);
@@ -169,7 +168,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         Session session = sessionFactory.openSession();
         try {
-            Criteria criteria = session.createCriteria(AssignmentSubmissions.class);
+            Criteria criteria = session.createCriteria(AssignmentSubmissions.class)
+                .add(Restrictions.eq("agent", requestingAgent));
             if (startDate != null) {
                 criteria.add(Restrictions.gt("dueDate", startDate));
             }
@@ -208,8 +208,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
     @EntityCustomAction(action = "Get_Retention_Engagement_Attendance", viewKey = EntityView.VIEW_LIST)
 	public ActionReturn getAttendance(EntityReference reference, Map<String, Object> params) {
 
-        checkSession(reference, params);
         String requestingAgent = getCheckedRequestingAgent(params, reference);
+        checkSession(reference, params, requestingAgent);
         final String[] terms = getTerms(params);
         Date startDate = getValidatedDate((String) params.get(START_DATE));
         String sendChangesOnly = (String) params.get(SEND_CHANGES_ONLY);
@@ -218,7 +218,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         Session session = sessionFactory.openSession();
         try {
-            Criteria criteria = session.createCriteria(CourseVisits.class);
+            Criteria criteria = session.createCriteria(CourseVisits.class)
+                .add(Restrictions.eq("agent", requestingAgent));
             if (startDate != null) {
                 criteria.add(Restrictions.gt("latestVisit", startDate));
             }
@@ -247,7 +248,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
         return null;
     }
 
-    private void checkSession(EntityReference reference, Map<String, Object> params) {
+    private void checkSession(EntityReference reference, Map<String, Object> params, String requestingAgent) {
 
         String sessionId = (String) params.get("sessionid");
 
@@ -257,10 +258,8 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         org.sakaiproject.tool.api.Session session = sessionManager.getSession(sessionId);
 
-        System.out.println(sessionId);
-        System.out.println(session);
-
-        if (session == null || !session.getUserEid().equals(hedexUserId)) {
+        // The login user for a requesting agent is the requestingAgent appended with -hedex-user
+        if (session == null || !session.getUserEid().equals(requestingAgent + "-hedex-user")) {
             throw new EntityException("You must be logged in as the hedex user.", reference.getReference());
         }
     }
