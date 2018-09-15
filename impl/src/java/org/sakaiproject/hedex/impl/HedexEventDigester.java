@@ -50,11 +50,21 @@ import org.springframework.transaction.support.TransactionTemplate;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Converts certain Sakai events into log entries in the database. Session
+ * durations, course visits and assignment gradings are all handled.
+ *
+ * @author Adrian Fish <adrian.r.fish@gmail.com>
+ */
 @Slf4j
 public class HedexEventDigester implements Observer {
 
+    // When SAK-39995 is merged into 12.x and released, this should be replaced
     private final String PRESENCE_SUFFIX = "-presence";
 
+    /**
+     * Handled events. Events not in this list will just be cheaply skipped
+     */
     private static final List<String> HANDLED_EVENTS
         = Arrays.asList(UsageSessionService.EVENT_LOGIN
                         , UsageSessionService.EVENT_LOGOUT
@@ -83,7 +93,18 @@ public class HedexEventDigester implements Observer {
     @Setter
     private TransactionTemplate transactionTemplate;
 
+    /**
+     * Every hedex.site.update.interval minutes, this will be updated with the
+     * site ids and agents of sites marked up with the hedex-agent property.
+     */
     private Map<String, String> siteAgents = new ConcurrentHashMap<>();
+
+    /**
+     * Every hedex.site.update.interval minutes, this will be updated with the
+     * user ids of members of Hedex sites, with the agents. If we have students
+     * on courses from multiple agents, then this will have to be changed. It
+     * assumes a 121 mapping between student and hedex-agent.
+     */
     private Map<String, String> memberAgents = new ConcurrentHashMap<>();
 
     private ScheduledExecutorService siteIdRefresher;
@@ -110,19 +131,23 @@ public class HedexEventDigester implements Observer {
                     memberAgents.clear();
                     List<Site> hedexSites
                         = siteService.getSites(SelectionType.ANY, null, null, desiredProps, SortType.NONE, null, false);
+                    // Stash all the located sites in the siteAgents map
                     for (Site hedexSite : hedexSites) {
                         String agent = hedexSite.getProperties().getProperty(hedexAgentProperty);
                         siteAgents.put(hedexSite.getId(), agent);
-                        for (Member member : hedexSite.getMembers()) {
+                        // Now stash the member user ids for the Hedex sites. We use this for the session duration
+                        // stuff, which is based on login events, which don't have a site id, obviously.
+                        /*for (Member member : hedexSite.getMembers()) {
                             memberAgents.put(member.getUserId(), agent);
-                        }
+                        }*/
+                        hedexSite.getMembers().forEach(m -> { memberAgents.put(m.getUserId(), agent); });
                     }
 
                     if (log.isDebugEnabled()) {
                         log.debug("Site Agents:");
-                        siteAgents.keySet().forEach(k -> { log.debug("\t{}:{}", k, siteAgents.get(k)); });
+                        siteAgents.forEach((k,v) -> { log.debug("\t{}:{}", k, v); });
                         log.debug("Member Agents:");
-                        memberAgents.keySet().forEach(k -> { log.debug("\t{}:{}", k, memberAgents.get(k)); });
+                        memberAgents.forEach((k,v) -> { log.debug("\t{}:{}", k, v); });
                     }
                 }, 0, hedexSiteUpdateInterval, TimeUnit.MINUTES);
         } else {
@@ -159,10 +184,6 @@ public class HedexEventDigester implements Observer {
             if (testSiteId == null) testSiteId = "";
             final String siteAgent = siteAgents.get(testSiteId);
 
-            String testEventUserId = event.getUserId();
-            if (testEventUserId == null) testEventUserId = "";
-            final String memberAgent = memberAgents.get(testEventUserId);
-
             final String eventUserId = event.getUserId();
 
             if (HANDLED_EVENTS.contains(eventName)  && !EventTrackingService.UNKNOWN_USER.equals(eventUserId)) {
@@ -171,6 +192,7 @@ public class HedexEventDigester implements Observer {
 
                 final String sessionId = event.getSessionId();
                 final String reference = event.getResource();
+                final String memberAgent = memberAgents.get(eventUserId);
 
                 if (UsageSessionService.EVENT_LOGIN.equals(eventName) && memberAgent != null) {
                     transactionTemplate.execute(new TransactionCallbackWithoutResult() {

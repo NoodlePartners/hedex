@@ -260,7 +260,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         // The login user for a requesting agent is the requestingAgent appended with -hedex-user
         if (session == null || !session.getUserEid().equals(requestingAgent + "-hedex-user")) {
-            throw new EntityException("You must be logged in as the hedex user.", reference.getReference());
+            throw new EntityException("You must be logged in as the correct hedex user.", reference.getReference());
         }
     }
 

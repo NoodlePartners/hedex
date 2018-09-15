@@ -3,7 +3,7 @@ HEDEX Implementation
 
 Hedex installs into Sakai and starts gathering data on user logins, assignment
 submissions, and course visits. This data is made available on a set of RESTful
-endpoints, authenticated with a particular, configurable user.
+endpoints, authenticated with a particular user based on the requesting agent.
 
 Installation
 ------------
@@ -21,30 +21,33 @@ system.
 Configuration
 -------------
 
-HEDEX digests Sakai events using a thread pool executor. This starts a pool
-of worker threads which are used to handle each event as it comes in. This
-starts with an upper limit of 20 threads. You can configure this in your Sakai
-properties with:
-
-hedex.digester.threadPoolSize=30
-
 HEDEX returns JSON containing a tenant id. This is initially set to UNSPECIFIED
 and if you want it set to something other than that use:
 
 hedex.tenantId=OurSakaiTenantId
 
-When retrieving data, a specific Sakai user must be used as the login. This
-defaults to 'hedex-api-user' and can be configured by:
-
-hedex.userId=some-other-user-id
-
 If you need to, you can disable the digester altogether. This might be useful in
 a cluster.
 
-hedex.digester.enabled=false
+hedex.digester.enabled = false (default: true)
+
+HEDEX uses a site propert, 'hedex-agent' to identify a site as being associated
+with a particular analytics consumer. For example, Noodle Partners sites will
+be marked with the site property 'hedex-agent=noodle'. The digester uses a
+scheduled executor to update maps of both the marked sites and their members.
+You can configure the interval for this site scan with:
+
+hedex.site.update.interval = 20
+
+The unit is minutes and it defaults to 30
 
 Retrieving Data
 ---------------
+
+When retrieving data, a specific Sakai user must be used as the login. This
+defaults to the reqesting agent, 'noodle' for instance, appended with
+'-hedex-user'. The agent should also be passed as the ReqestingAgent parameter.
+Without these two things matching, your requests will be rejected.
 
 Firstly, have a look at scripts/pulldataexamples.py. To pull the HEDEX data,
 your script first needs to login and get a session string. Every call henceforth
