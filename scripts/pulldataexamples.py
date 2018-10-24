@@ -2,10 +2,9 @@ import requests
 from zeep import Client
 
 server_url = 'http://localhost'
-username = 'fishface-hedex-user'
-password = 'fishface'
-
-agent = 'fishface'
+agent = 'noodle'
+username = agent + '-hedex-user'
+password = 'noodle'
 
 client = Client(server_url + '/sakai-ws/soap/login?wsdl')
 session_id = client.service.login(username, password)
