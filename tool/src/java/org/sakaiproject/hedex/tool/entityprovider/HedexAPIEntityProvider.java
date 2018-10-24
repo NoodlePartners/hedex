@@ -44,6 +44,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.criterion.Restrictions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -72,6 +73,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
     public void init() {
 
+        objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
         tenantId = serverConfigurationService.getString("hedex.tenantId", "UNSPECIFIED");
     }
 
@@ -86,6 +88,51 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 	@EntityCustomAction(action = "Get_Retention_Engagement_EngagementActivity", viewKey = EntityView.VIEW_LIST)
 	public ActionReturn getEngagementActivity(EntityReference reference, Map<String, Object> params) {
 
+
+        String requestingAgent = getCheckedRequestingAgent(params, reference);
+        checkSession(reference, params, requestingAgent);
+        final String[] terms = getTerms(params);
+        Date startDate = getValidatedDate((String) params.get(START_DATE));
+        String sendChangesOnly = (String) params.get(SEND_CHANGES_ONLY);
+        String lastRunDate = (String) params.get(LAST_RUN_DATE);
+        String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
+
+        Session session = sessionFactory.openSession();
+        try {
+            Criteria criteria = session.createCriteria(CourseVisits.class)
+                .add(Restrictions.eq("agent", requestingAgent));
+            if (startDate != null) {
+                criteria.add(Restrictions.ge("latestVisit", startDate));
+            }
+            List<CourseVisits> courseVisitss = criteria.list();
+            EngagementActivityRecords eaRecords = new EngagementActivityRecords();
+            eaRecords.setTenantId(tenantId);
+            List<EngagementActivityRecord> records = new ArrayList<>();
+            for (CourseVisits cv : courseVisitss) {
+                String personLmsId = cv.getUserId();
+                EngagementActivityRecord record = new EngagementActivityRecord();
+                record.setPersonLmsId(personLmsId);
+                record.setLmsSectionId(cv.getSiteId());
+                record.setLmsTotalLogin(cv.getNumVisits());
+                record.setLmsLastAccessDate(cv.getLatestVisit().getTime());
+                records.add(record);
+            }
+
+            eaRecords.setEngagementActivity(records);
+            String json = objectMapper.writeValueAsString(eaRecords);
+            return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
+        } catch (Exception e) {
+            log.error("Failed to get sessions.", e);
+        } finally {
+            session.close();
+        }
+
+        return null;
+	}
+
+    @EntityCustomAction(action = "Get_Retention_Engagement_SessionDurations", viewKey = EntityView.VIEW_LIST)
+	public ActionReturn getSessionDurations(EntityReference reference, Map<String, Object> params) {
+
         String requestingAgent = getCheckedRequestingAgent(params, reference);
         checkSession(reference, params, requestingAgent);
         final String[] terms = getTerms(params);
@@ -99,7 +146,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
             Criteria criteria = session.createCriteria(SessionDuration.class)
                 .add(Restrictions.eq("agent", requestingAgent));
             if (startDate != null) {
-                criteria.add(Restrictions.ge("startTime", startDate));
+                criteria.add(Restrictions.ge("latestVisit", startDate));
             }
             List<SessionDuration> sessionDurations = criteria.list();
             EngagementActivityRecords eaRecords = new EngagementActivityRecords();

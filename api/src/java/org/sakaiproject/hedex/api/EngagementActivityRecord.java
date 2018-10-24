@@ -5,19 +5,17 @@ import lombok.Data;
 @Data
 public class EngagementActivityRecord {
 
-    private final String UNSPECIFIED = "UNSPECIFIED";
-
-    private String personSisId = UNSPECIFIED;
-    private String personLmsId = UNSPECIFIED;
-    private String sisSectionId = UNSPECIFIED;
-    private String lmsSectionId = UNSPECIFIED;
-    private String termCode = UNSPECIFIED;
-    private String sectionRefNum = UNSPECIFIED;
-    private String subjectCode = UNSPECIFIED;
-    private String sectionCourseNumber = UNSPECIFIED;
-    private String sectionNumber = UNSPECIFIED;
-    private String engagementStatus = UNSPECIFIED;
+    private String personSisId;
+    private String personLmsId;
+    private String sisSectionId;
+    private String lmsSectionId;
+    private String termCode;
+    private String sectionRefNum;
+    private String subjectCode;
+    private String sectionCourseNumber;
+    private String sectionNumber;
+    private String engagementStatus;
     private long lmsLastAccessDate = 0L;
     private long lmsTotalTime = 0L;
-    private int lmsTotalLogin = 0;
+    private long lmsTotalLogin = 0;
 }

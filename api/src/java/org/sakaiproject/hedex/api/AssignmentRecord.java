@@ -5,21 +5,19 @@ import lombok.Data;
 @Data
 public class AssignmentRecord {
 
-    private final String UNSPECIFIED = "UNSPECIFIED";
-
-    private String personLmsId = UNSPECIFIED;
-    private String assignmentLmsId = UNSPECIFIED;
-    private String assignType = UNSPECIFIED;
-    private String assignTitle = UNSPECIFIED;
-    private String assignDueDate = UNSPECIFIED;
-    private String assignGrade = UNSPECIFIED;
-    private String assignGradeScheme = UNSPECIFIED;
-    private String assignScore = UNSPECIFIED;
-    private String assignScoreScheme = UNSPECIFIED;
-    private String assignHiScore = UNSPECIFIED;
-    private String assignLoScore = UNSPECIFIED;
-    private String assignFirstAttmpt = UNSPECIFIED;
-    private String assignLastAttmpt = UNSPECIFIED;
-    private String assignAvgAttmpt = UNSPECIFIED;
-    private String assignNumAttempt = UNSPECIFIED;
+    private String personLmsId;
+    private String assignmentLmsId;
+    private String assignType;
+    private String assignTitle;
+    private String assignDueDate;
+    private String assignGrade;
+    private String assignGradeScheme;
+    private String assignScore;
+    private String assignScoreScheme;
+    private String assignHiScore;
+    private String assignLoScore;
+    private String assignFirstAttmpt;
+    private String assignLastAttmpt;
+    private String assignAvgAttmpt;
+    private String assignNumAttempt;
 }
