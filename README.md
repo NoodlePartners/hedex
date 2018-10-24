@@ -31,7 +31,7 @@ a cluster.
 
 hedex.digester.enabled = false (default: true)
 
-HEDEX uses a site propert, 'hedex-agent' to identify a site as being associated
+HEDEX uses a site property, 'hedex-agent' to identify a site as being associated
 with a particular analytics consumer. For example, Noodle Partners sites will
 be marked with the site property 'hedex-agent=noodle'. The digester uses a
 scheduled executor to update maps of both the marked sites and their members.
