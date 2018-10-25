@@ -21,7 +21,3 @@ if session_id:
     print("\nGetting assignments ...")
     r = requests.get(server_url + '/direct/hedex/Get_Retention_Engagement_Assignments?RequestingAgent=' + agent + '&sessionid=' + session_id + '&startDate=' + start_date)
     print(r.json())
-
-    print("\nGetting attendance ...")
-    r = requests.get(server_url + '/direct/hedex/Get_Retention_Engagement_Attendance?RequestingAgent=' + agent + '&sessionid=' + session_id + '&startDate=' + start_date)
-    print(r.json())

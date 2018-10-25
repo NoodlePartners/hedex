@@ -27,8 +27,6 @@ import org.sakaiproject.entitybroker.exception.EntityException;
 import org.sakaiproject.entitybroker.util.AbstractEntityProvider;
 import org.sakaiproject.hedex.api.AssignmentRecord;
 import org.sakaiproject.hedex.api.AssignmentRecords;
-import org.sakaiproject.hedex.api.AttendanceRecord;
-import org.sakaiproject.hedex.api.AttendanceRecords;
 import org.sakaiproject.hedex.api.EngagementActivityRecord;
 import org.sakaiproject.hedex.api.EngagementActivityRecords;
 import org.sakaiproject.hedex.api.model.AssignmentSubmissions;
@@ -243,49 +241,6 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
             assignmentRecords.setTenantId(tenantId);
             assignmentRecords.setAssignments(records);
             String json = objectMapper.writeValueAsString(assignmentRecords);
-            return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
-        } catch (Exception e) {
-            log.error("Failed to serialise to JSON", e);
-        } finally {
-            session.close();
-        }
-        return null;
-    }
-
-    @EntityCustomAction(action = "Get_Retention_Engagement_Attendance", viewKey = EntityView.VIEW_LIST)
-	public ActionReturn getAttendance(EntityReference reference, Map<String, Object> params) {
-
-        String requestingAgent = getCheckedRequestingAgent(params, reference);
-        checkSession(reference, params, requestingAgent);
-        final String[] terms = getTerms(params);
-        Date startDate = getValidatedDate((String) params.get(START_DATE));
-        String sendChangesOnly = (String) params.get(SEND_CHANGES_ONLY);
-        String lastRunDate = (String) params.get(LAST_RUN_DATE);
-        String includeAllTermHistory = (String) params.get(INCLUDE_ALL_TERM_HISTORY);
-
-        Session session = sessionFactory.openSession();
-        try {
-            Criteria criteria = session.createCriteria(CourseVisits.class)
-                .add(Restrictions.eq("agent", requestingAgent));
-            if (startDate != null) {
-                criteria.add(Restrictions.gt("latestVisit", startDate));
-            }
-            List<CourseVisits> courseVisitss = criteria.list();
-            List<AttendanceRecord> records = new ArrayList<>();
-            if (courseVisitss.size() > 0) {
-                for (CourseVisits courseVisits : courseVisitss) {
-                    AttendanceRecord attendanceRecord = new AttendanceRecord();
-                    attendanceRecord.setPersonLmsId(courseVisits.getUserId());
-                    attendanceRecord.setTotalAttendanceEvents(courseVisits.getNumVisits().toString());
-                    attendanceRecord.setSectionCourseNumber(courseVisits.getSiteId());
-                    Site site = siteService.getSite(courseVisits.getSiteId());
-                    records.add(attendanceRecord);
-                }
-            }
-            AttendanceRecords attendanceRecords = new AttendanceRecords();
-            attendanceRecords.setTenantId(tenantId);
-            attendanceRecords.setAttendance(records);
-            String json = objectMapper.writeValueAsString(attendanceRecords);
             return new ActionReturn(Formats.UTF_8, Formats.JSON_MIME_TYPE, json);
         } catch (Exception e) {
             log.error("Failed to serialise to JSON", e);
