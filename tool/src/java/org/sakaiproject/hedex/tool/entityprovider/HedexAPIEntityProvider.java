@@ -228,11 +228,11 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
                     assignmentRecord.setAssignTitle(submissions.getTitle());
                     assignmentRecord.setAssignDueDate(submissions.getDueDate().toString());
                     assignmentRecord.setAssignScore(submissions.getLastScore());
-                    assignmentRecord.setAssignLoScore(submissions.getLowestScore().toString());
-                    assignmentRecord.setAssignHiScore(submissions.getHighestScore().toString());
+                    assignmentRecord.setAssignLoScore(submissions.getLowestScore()+"");
+                    assignmentRecord.setAssignHiScore(submissions.getHighestScore()+"");
                     assignmentRecord.setAssignFirstAttmpt(submissions.getFirstScore());
                     assignmentRecord.setAssignLastAttmpt(submissions.getLastScore());
-                    assignmentRecord.setAssignAvgAttmpt(submissions.getAverageScore().toString());
+                    assignmentRecord.setAssignAvgAttmpt(submissions.getAverageScore()+"");
                     assignmentRecord.setAssignNumAttempt(submissions.getNumSubmissions().toString());
                     records.add(assignmentRecord);
                 }

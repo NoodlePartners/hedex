@@ -49,6 +49,9 @@ public class AssignmentSubmissions {
     @Column(name = "NUM_SUBMISSIONS", nullable = false)
     private Integer numSubmissions;
 
+    @Column(name = "NUM_GRADINGS")
+    private Integer numGradings;
+
     @Column(name = "FIRST_SCORE")
     private String firstScore;
 

@@ -310,6 +310,7 @@ public class HedexEventDigester implements Observer {
                                     // First time this submission has been graded
                                     as.setFirstScore(grade);
                                     as.setLastScore(grade);
+                                    as.setNumGradings(1);
                                     if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
                                         // This is a numeric grade, so we can do numeric stuff with it.
                                         try {
@@ -328,10 +329,14 @@ public class HedexEventDigester implements Observer {
                                     if (gradeType.equals(Assignment.GradeType.SCORE_GRADE_TYPE)) {
                                         // This is a numeric grade, so we can do numeric stuff with it.
                                         try {
+                                            float currentAverageScore = as.getAverageScore();
+                                            int numGradings = as.getNumGradings();
                                             int numericScore = Integer.parseInt(grade);
+                                            float newAvg = (currentAverageScore*(float)numGradings + numericScore)/(numGradings+1);
                                             if (numericScore < as.getLowestScore()) as.setLowestScore(numericScore);
                                             else if (numericScore > as.getHighestScore()) as.setHighestScore(numericScore);
-                                            as.setAverageScore((float)((as.getLowestScore() + as.getHighestScore()) / 2));
+                                            as.setAverageScore(newAvg);
+                                            as.setNumGradings(numGradings + 1);
                                         } catch (NumberFormatException nfe) {
                                             log.error("Failed to set scores on graded submission "
                                                         + submissionId + " - NumberFormatException on " + grade);

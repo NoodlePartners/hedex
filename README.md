@@ -54,5 +54,9 @@ your script first needs to login and get a session string. Every call henceforth
 passes that session string. The calls will fail otherwise. Data is returned to the 
 spec at: http://petstore.swagger.io/?url=http://employees.idatainc.com/~bparish/NoodleBus/swagger_NoodleBus_Retention_API_v4.yaml
 
+NOTE: assignAvgAttmpt in the returned JSON for Get_Retention_Engagement_Assignments is calculated as the average of the
+grades applied to the submission. It's not based on the number of times the student submits. In other words, it's not
+really based on number of attempts, but on gradings by instructors.
+
 To run the script, you'll need python3.x installed, and the SOAP client 'zeep'
 installed. You can use pip for that: pip install zeep.
