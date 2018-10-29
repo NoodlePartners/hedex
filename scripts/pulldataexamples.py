@@ -1,7 +1,7 @@
 import requests
 from zeep import Client
 
-server_url = 'http://localhost'
+server_url = 'http://sakai.noodle-partners.com:8880'
 agent = 'noodle'
 username = agent + '-hedex-user'
 password = 'noodle'
