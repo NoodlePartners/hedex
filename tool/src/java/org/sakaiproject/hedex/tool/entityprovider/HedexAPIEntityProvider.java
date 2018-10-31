@@ -226,14 +226,24 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
                     assignmentRecord.setAssignmentLmsId(submissions.getAssignmentId());
                     assignmentRecord.setPersonLmsId(submissions.getUserId());
                     assignmentRecord.setAssignTitle(submissions.getTitle());
-                    assignmentRecord.setAssignDueDate(submissions.getDueDate().toString());
+                    Date dueDate = submissions.getDueDate();
+                    String assignDueDate = (dueDate==null) ? "" : dueDate.toString();
+                    assignmentRecord.setAssignDueDate(assignDueDate);
                     assignmentRecord.setAssignScore(submissions.getLastScore());
-                    assignmentRecord.setAssignLoScore(submissions.getLowestScore()+"");
-                    assignmentRecord.setAssignHiScore(submissions.getHighestScore()+"");
+                    Integer lowestScore = submissions.getLowestScore();
+                    String assignLoScore = (lowestScore==null) ? "" : lowestScore.toString();
+                    assignmentRecord.setAssignLoScore(assignLoScore);
+                    Integer highestScore = submissions.getLowestScore();
+                    String assignHiScore = (highestScore==null) ? "" : highestScore.toString();
+                    assignmentRecord.setAssignHiScore(assignHiScore);
                     assignmentRecord.setAssignFirstAttmpt(submissions.getFirstScore());
                     assignmentRecord.setAssignLastAttmpt(submissions.getLastScore());
-                    assignmentRecord.setAssignAvgAttmpt(submissions.getAverageScore()+"");
-                    assignmentRecord.setAssignNumAttempt(submissions.getNumSubmissions().toString());
+                    Float averageScore = submissions.getAverageScore();
+                    String assignAvgAttmpt = (averageScore==null) ? "" : averageScore.toString();
+                    assignmentRecord.setAssignAvgAttmpt(assignAvgAttmpt);
+                    Integer numSubmissions = submissions.getNumSubmissions();
+                    String assignNumAttempt = (numSubmissions==null) ? "" : numSubmissions.toString();
+                    assignmentRecord.setAssignNumAttempt(assignNumAttempt);
                     records.add(assignmentRecord);
                 }
             }
