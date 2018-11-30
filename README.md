@@ -18,6 +18,9 @@ it needs, HDX\_SESSION\_DURATION, HDX\_COURSE\_VISITS, and
 HDX\_ASSIGNMENT\_SUBMISSIONS, and then start to populate them as users use the
 system.
 
+Note: There are both master and 12.x branches.  The one we are using in
+production will be 12.x.
+
 Configuration
 -------------
 
