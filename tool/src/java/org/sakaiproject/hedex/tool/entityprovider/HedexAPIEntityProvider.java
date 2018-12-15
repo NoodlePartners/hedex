@@ -270,8 +270,13 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 
         org.sakaiproject.tool.api.Session session = sessionManager.getSession(sessionId);
 
-        // The login user for a requesting agent is the requestingAgent appended with -hedex-user
-        if (session == null || !session.getUserEid().equals(requestingAgent + "-hedex-user")) {
+        // The login user for a requesting agent is the requestingAgent appended with -hedex-user (preferred)
+        // or matching the requestingAgent
+        String userEid = "";
+        if(session != null) {
+            userEid = session.getUserEid();
+        }
+        if (session == null || (!userEid.equals(requestingAgent + "-hedex-user") && !userEid.equals(requestingAgent))) {
             throw new EntityException("You must be logged in as the correct hedex user.", reference.getReference());
         }
     }

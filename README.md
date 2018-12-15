@@ -48,9 +48,10 @@ Retrieving Data
 ---------------
 
 When retrieving data, a specific Sakai user must be used as the login. This
-defaults to the reqesting agent, 'noodle' for instance, appended with
-'-hedex-user'. The agent should also be passed as the ReqestingAgent parameter.
-Without these two things matching, your requests will be rejected.
+must be either exactly the reqesting agent, 'noodle' for instance, or the agent 
+appended with the string '-hedex-user'. The agent should also be passed as the
+ReqestingAgent parameter. Without these two things matching, the request will
+be rejected.
 
 Firstly, have a look at scripts/pulldataexamples.py. To pull the HEDEX data,
 your script first needs to login and get a session string. Every call henceforth
