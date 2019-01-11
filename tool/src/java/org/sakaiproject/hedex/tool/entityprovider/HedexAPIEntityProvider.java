@@ -38,6 +38,7 @@ import org.sakaiproject.tool.api.SessionManager;
 
 import org.sakaiproject.user.api.User;
 import org.sakaiproject.user.cover.UserDirectoryService;
+import org.sakaiproject.user.api.UserNotDefinedException;
 
 import org.hibernate.Criteria;
 import org.hibernate.Session;
@@ -334,7 +335,12 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
             // User EID is unknown - don't keep trying to look it up
             return(null);
         }
-        User user = UserDirectoryService.getUser(personLmsId);
+        User user = null;
+        try:
+            User user = UserDirectoryService.getUser(personLmsId);
+        catch (UserNotDefinedException e) {
+			// This shouldn't actually happen
+        }
         if(user == null) {
             return(null);
         }
