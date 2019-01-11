@@ -86,7 +86,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 		return "hedex";
 	}
 
-	private String getPersonSisID(String personLmsId, HashMap userLookup) {
+	private String getPersonSisID(String personLmsId, HashMap<String, String> userLookup) {
 		if(userLookup == null || personLmsId == null) {
 			return(null);
 		}
