@@ -6,6 +6,7 @@ import lombok.Data;
 public class AssignmentRecord {
 
     private String personLmsId;
+    private String personSisId;
     private String assignmentLmsId;
     private String assignType;
     private String assignTitle;
