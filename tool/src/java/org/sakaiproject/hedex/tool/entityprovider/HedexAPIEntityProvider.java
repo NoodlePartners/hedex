@@ -337,7 +337,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
         }
         User user = null;
         try {
-            User user = UserDirectoryService.getUser(personLmsId);
+            user = UserDirectoryService.getUser(personLmsId);
         } catch (UserNotDefinedException e) {
             // This shouldn't actually happen
         }
