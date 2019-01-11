@@ -86,27 +86,6 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
 		return "hedex";
 	}
 
-	private String getPersonSisID(String personLmsId, HashMap<String, String> userLookup) {
-		if(userLookup == null || personLmsId == null) {
-			return(null);
-		}
-		String personSisId = userLookup.get(personLmsId);
-		if(personSisId != null) {
-			return(personSisId);
-		}
-		if(userLookup.containsKey(personLmsId)) {
-			// User EID is unknown - don't keep trying to look it up
-			return(null);
-		}
-		User user = UserDirectoryService.getUser(personLmsId);
-		if(user == null) {
-			return(null);
-		}
-		personSisId = user.getEid();
-		userLookup.put(personLmsId, personSisId);
-		return(personSisId);
-	}
-
 	@EntityCustomAction(action = "Get_Retention_Engagement_EngagementActivity", viewKey = EntityView.VIEW_LIST)
 	public ActionReturn getEngagementActivity(EntityReference reference, Map<String, Object> params) {
 
@@ -342,4 +321,26 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
         final String termsString = (String) params.get(TERMS);
         return termsString != null ? termsString.split(",") : new String[] {};
     }
+
+    private String getPersonSisId(String personLmsId, HashMap<String, String> userLookup) {
+        if(userLookup == null || personLmsId == null) {
+            return(null);
+        }
+        String personSisId = userLookup.get(personLmsId);
+        if(personSisId != null) {
+            return(personSisId);
+        }
+        if(userLookup.containsKey(personLmsId)) {
+            // User EID is unknown - don't keep trying to look it up
+            return(null);
+        }
+        User user = UserDirectoryService.getUser(personLmsId);
+        if(user == null) {
+            return(null);
+        }
+        personSisId = user.getEid();
+        userLookup.put(personLmsId, personSisId);
+        return(personSisId);
+    }
+
 }
