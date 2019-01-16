@@ -237,7 +237,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
                     String personLmsId = submissions.getUserId();
                     String personSisId = getPersonSisId(personLmsId, userLookup);
                     assignmentRecord.setPersonLmsId(personLmsId);
-                    assignmentRecord.setPersonLmsId(personSisId);
+                    assignmentRecord.setPersonSisId(personSisId);
                     assignmentRecord.setAssignTitle(submissions.getTitle());
                     Date dueDate = submissions.getDueDate();
                     String assignDueDate = (dueDate==null) ? "" : dueDate.toString();
