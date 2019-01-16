@@ -152,7 +152,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
             Criteria criteria = session.createCriteria(SessionDuration.class)
                 .add(Restrictions.eq("agent", requestingAgent));
             if (startDate != null) {
-                criteria.add(Restrictions.ge("latestVisit", startDate));
+                criteria.add(Restrictions.ge("startTime", startDate));
             }
             List<SessionDuration> sessionDurations = criteria.list();
             EngagementActivityRecords eaRecords = new EngagementActivityRecords();
@@ -187,6 +187,7 @@ public class HedexAPIEntityProvider extends AbstractEntityProvider
                 if (!records.containsKey(personLmsId)) {
                     EngagementActivityRecord record = new EngagementActivityRecord();
                     record.setPersonLmsId(personLmsId);
+                    record.setPersonSisId(personSisId);
                     records.put(personLmsId, record);
                 }
             }
